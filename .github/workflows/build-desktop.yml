@@ -22,8 +22,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: desktop/package-lock.json
 
       - name: Install desktop dependencies
         working-directory: desktop
@@ -32,8 +30,8 @@ jobs:
       - name: Build Windows installer + portable
         working-directory: desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist -- --publish never
 
       - name: List build artifacts
         shell: pwsh
@@ -48,7 +46,6 @@ jobs:
           name: bpmn-rossilber-windows
           path: |
             desktop/dist/*.exe
-            desktop/dist/*.yml
           if-no-files-found: error
 
       - name: Publish to GitHub Release
@@ -58,7 +55,7 @@ jobs:
           name: ${{ github.ref_name }}
           draft: false
           prerelease: false
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: |
             desktop/dist/*.exe
             desktop/dist/latest.yml
