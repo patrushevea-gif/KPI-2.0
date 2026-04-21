@@ -178,6 +178,180 @@ SHAPES['event-timer'] = {
     },
 };
 
+/* ---- event helpers (Приложение А) ----
+   variant: 'start' | 'intermediate' | 'end' | 'boundary-int' | 'boundary-nonint'
+*/
+function eventBase(node, variant) {
+    const g = svgEl('g');
+    const cx = node.w/2, cy = node.h/2;
+    const rOuter = node.w/2;
+    if (variant === 'end') {
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':3}));
+    } else if (variant === 'intermediate' || variant === 'boundary-int') {
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':1.5}));
+        g.appendChild(svgEl('ellipse',{cx,cy,rx:rOuter-4,ry:node.h/2-4,
+            fill:'none',stroke:node.stroke,'stroke-width':1.4,'pointer-events':'none'}));
+    } else if (variant === 'boundary-nonint') {
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':1.5,'stroke-dasharray':'3 2'}));
+        g.appendChild(svgEl('ellipse',{cx,cy,rx:rOuter-4,ry:node.h/2-4,
+            fill:'none',stroke:node.stroke,'stroke-width':1.4,
+            'stroke-dasharray':'3 2','pointer-events':'none'}));
+    } else {
+        // start
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':1.6}));
+    }
+    return g;
+}
+function eventIcon(node, trigger, filled) {
+    const cx = node.w/2, cy = node.h/2;
+    const color = filled ? '#ffffff' : node.stroke;
+    const bg = filled ? node.stroke : 'transparent';
+    const g = svgEl('g',{'pointer-events':'none'});
+    if (trigger === 'message') {
+        const w = 18, h = 12;
+        g.appendChild(svgEl('rect',{x:cx-w/2,y:cy-h/2,width:w,height:h,fill:bg,stroke:color,'stroke-width':1.3}));
+        g.appendChild(svgEl('polyline',{points:`${cx-w/2},${cy-h/2} ${cx},${cy+h/2-2} ${cx+w/2},${cy-h/2}`,
+            fill:'none',stroke:color,'stroke-width':1.3}));
+    } else if (trigger === 'timer') {
+        g.appendChild(svgEl('circle',{cx,cy,r:9,fill:bg,stroke:color,'stroke-width':1.3}));
+        g.appendChild(svgEl('line',{x1:cx,y1:cy,x2:cx,y2:cy-6,stroke:color,'stroke-width':1.3,'stroke-linecap':'round'}));
+        g.appendChild(svgEl('line',{x1:cx,y1:cy,x2:cx+5,y2:cy,stroke:color,'stroke-width':1.3,'stroke-linecap':'round'}));
+        // 12 ticks minimal
+        for (let i=0;i<12;i++){
+            const a = i*Math.PI/6;
+            const x1=cx+Math.cos(a)*9, y1=cy+Math.sin(a)*9;
+            const x2=cx+Math.cos(a)*7, y2=cy+Math.sin(a)*7;
+            g.appendChild(svgEl('line',{x1,y1,x2,y2,stroke:color,'stroke-width':1}));
+        }
+    } else if (trigger === 'error') {
+        // zig-zag lightning
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-8},${cy+6} ${cx-2},${cy-2} ${cx-5},${cy-2} ${cx+8},${cy-8} ${cx+2},${cy} ${cx+6},${cy} ${cx-4},${cy+8}`,
+            fill:bg, stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'cancel') {
+        g.appendChild(svgEl('path',{
+            d:`M ${cx-8} ${cy-8} L ${cx+8} ${cy+8} M ${cx+8} ${cy-8} L ${cx-8} ${cy+8}`,
+            stroke:color,'stroke-width':2.2,fill:'none','stroke-linecap':'round'}));
+    } else if (trigger === 'compensation') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-8},${cy} ${cx-2},${cy-6} ${cx-2},${cy+6}`,
+            fill:bg,stroke:color,'stroke-width':1.3}));
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-2},${cy} ${cx+6},${cy-6} ${cx+6},${cy+6}`,
+            fill:bg,stroke:color,'stroke-width':1.3}));
+    } else if (trigger === 'escalation') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx},${cy-9} ${cx+6},${cy+7} ${cx},${cy+2} ${cx-6},${cy+7}`,
+            fill:bg,stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'condition') {
+        const w=14,h=14;
+        g.appendChild(svgEl('rect',{x:cx-w/2,y:cy-h/2,width:w,height:h,fill:bg,stroke:color,'stroke-width':1.3}));
+        for (let i=0;i<3;i++){
+            const yy = cy - h/2 + 3 + i*4;
+            g.appendChild(svgEl('line',{x1:cx-w/2+2,y1:yy,x2:cx+w/2-2,y2:yy,stroke:color,'stroke-width':1.1}));
+        }
+    } else if (trigger === 'link') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-8},${cy-4} ${cx+3},${cy-4} ${cx+3},${cy-8} ${cx+9},${cy} ${cx+3},${cy+8} ${cx+3},${cy+4} ${cx-8},${cy+4}`,
+            fill:bg,stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'signal') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx},${cy-8} ${cx+8},${cy+6} ${cx-8},${cy+6}`,
+            fill:bg,stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'terminate') {
+        g.appendChild(svgEl('circle',{cx,cy,r:9,fill:color}));
+    } else if (trigger === 'complex') {
+        // asterisk
+        const d = 8;
+        g.appendChild(svgEl('path',{
+            d:`M ${cx-d} ${cy} h ${2*d}
+               M ${cx} ${cy-d} v ${2*d}
+               M ${cx-d*0.7} ${cy-d*0.7} l ${d*1.4} ${d*1.4}
+               M ${cx+d*0.7} ${cy-d*0.7} l ${-d*1.4} ${d*1.4}`,
+            stroke:color,'stroke-width':1.7,'stroke-linecap':'round',fill:'none'}));
+    } else if (trigger === 'parallel-multiple') {
+        const d = 8;
+        g.appendChild(svgEl('path',{
+            d:`M ${cx-d} ${cy} h ${2*d} M ${cx} ${cy-d} v ${2*d}`,
+            stroke:color,'stroke-width':2.2,fill:'none','stroke-linecap':'round'}));
+    }
+    return g;
+}
+
+function addEvent(kind, label, trigger, variant, color, filledIcon) {
+    SHAPES[kind] = {
+        label, category:'events',
+        defaults:{ w:64, h:64, fill:'#ffffff', stroke:color, text:label, fontSize:11, strokeWidth:variant==='end'?3:variant==='start'?1.6:1.5 },
+        draw: n => {
+            const g = svgEl('g');
+            g.appendChild(eventBase(n, variant));
+            if (trigger) g.appendChild(eventIcon(n, trigger, filledIcon));
+            return g;
+        },
+    };
+}
+
+/* message events */
+addEvent('event-start-message', 'Старт · Сообщение', 'message', 'start', '#10b981', false);
+addEvent('event-int-message',   'Промеж. · Сообщение (получ.)', 'message', 'intermediate', '#f59e0b', false);
+addEvent('event-int-message-throw','Промеж. · Сообщение (отпр.)', 'message', 'intermediate', '#f59e0b', true);
+addEvent('event-end-message',   'Конец · Сообщение', 'message', 'end', '#ef4444', true);
+addEvent('event-boundary-message-int',    'Гран. прерыв. · Сообщение', 'message', 'boundary-int', '#f59e0b', false);
+addEvent('event-boundary-message-nonint', 'Гран. непрер. · Сообщение', 'message', 'boundary-nonint', '#f59e0b', false);
+
+/* timer events */
+addEvent('event-int-timer', 'Промеж. · Таймер', 'timer', 'intermediate', '#f59e0b', false);
+addEvent('event-boundary-timer-int',    'Гран. прерыв. · Таймер', 'timer', 'boundary-int', '#f59e0b', false);
+addEvent('event-boundary-timer-nonint', 'Гран. непрер. · Таймер', 'timer', 'boundary-nonint', '#f59e0b', false);
+
+/* terminate */
+addEvent('event-end-terminate', 'Конец · Терминальное', 'terminate', 'end', '#ef4444', false);
+
+/* error */
+addEvent('event-int-error', 'Промеж. · Ошибка (обраб.)', 'error', 'intermediate', '#f59e0b', false);
+addEvent('event-boundary-error', 'Гран. прерыв. · Ошибка', 'error', 'boundary-int', '#f59e0b', false);
+addEvent('event-end-error', 'Конец · Ошибка', 'error', 'end', '#ef4444', true);
+
+/* cancel */
+addEvent('event-int-cancel', 'Промеж. · Отмена', 'cancel', 'intermediate', '#f59e0b', false);
+addEvent('event-end-cancel', 'Конец · Отмена', 'cancel', 'end', '#ef4444', true);
+
+/* compensation */
+addEvent('event-int-compensation', 'Промеж. · Компенсация', 'compensation', 'intermediate', '#f59e0b', false);
+addEvent('event-end-compensation', 'Конец · Компенсация', 'compensation', 'end', '#ef4444', true);
+
+/* escalation */
+addEvent('event-int-escalation', 'Промеж. · Эскалация', 'escalation', 'intermediate', '#f59e0b', false);
+addEvent('event-end-escalation', 'Конец · Эскалация', 'escalation', 'end', '#ef4444', true);
+
+/* condition */
+addEvent('event-start-condition', 'Старт · Условие', 'condition', 'start', '#10b981', false);
+addEvent('event-int-condition',   'Промеж. · Условие', 'condition', 'intermediate', '#f59e0b', false);
+addEvent('event-boundary-condition-int',    'Гран. прерыв. · Условие', 'condition', 'boundary-int', '#f59e0b', false);
+addEvent('event-boundary-condition-nonint', 'Гран. непрер. · Условие', 'condition', 'boundary-nonint', '#f59e0b', false);
+
+/* link */
+addEvent('event-int-link-catch', 'Промеж. · Ссылка (вход)', 'link', 'intermediate', '#f59e0b', false);
+addEvent('event-int-link-throw', 'Промеж. · Ссылка (выход)', 'link', 'intermediate', '#f59e0b', true);
+
+/* signal */
+addEvent('event-start-signal', 'Старт · Сигнал', 'signal', 'start', '#10b981', false);
+addEvent('event-int-signal',   'Промеж. · Сигнал', 'signal', 'intermediate', '#f59e0b', false);
+addEvent('event-end-signal',   'Конец · Сигнал', 'signal', 'end', '#ef4444', true);
+
+/* complex (multiple) */
+addEvent('event-start-complex', 'Старт · Комплексное', 'complex', 'start', '#10b981', false);
+addEvent('event-int-complex',   'Промеж. · Комплексное', 'complex', 'intermediate', '#f59e0b', false);
+addEvent('event-end-complex',   'Конец · Комплексное', 'complex', 'end', '#ef4444', false);
+
+/* parallel multiple */
+addEvent('event-start-parallel-multi', 'Старт · Паралл. комплексное', 'parallel-multiple', 'start', '#10b981', false);
+addEvent('event-int-parallel-multi',   'Промеж. · Паралл. комплексное', 'parallel-multiple', 'intermediate', '#f59e0b', false);
+
 /* --- tasks --- */
 function taskBase(node, iconNode){
     const g = svgEl('g');
