@@ -1,5 +1,5 @@
 /* =========================================================
-   BPMN Future — editor (app.js)
+   BPMN Rossilber — editor (app.js)
    Единый файл, без зависимостей. Весь рендер — SVG + DOM.
    Архитектура:
      - state { nodes[], edges[], selection, camera, history }
@@ -1072,7 +1072,7 @@ function main() {
     initMinimap();
     renderAll();
     pushHistory();
-    console.info('[BPMN Future] ready');
+    console.info('[BPMN Rossilber] ready');
 }
 
 /* ---------- context menu ---------- */
@@ -1704,12 +1704,13 @@ function initKeyboard() {
     // autosave to localStorage
     setInterval(() => {
         try {
-            localStorage.setItem('bpmn-future-autosave',
+            localStorage.setItem('bpmn-rossilber-autosave',
                 JSON.stringify({ nodes: state.nodes, edges: state.edges }));
         } catch {}
     }, 5000);
     try {
-        const saved = localStorage.getItem('bpmn-future-autosave');
+        const saved = localStorage.getItem('bpmn-rossilber-autosave')
+                   || localStorage.getItem('bpmn-future-autosave');
         if (saved) {
             const d = JSON.parse(saved);
             if (d.nodes?.length) {
@@ -1930,7 +1931,7 @@ function saveJson() {
         edges: state.edges,
     };
     downloadFile(JSON.stringify(data, null, 2),
-        'bpmn-future-map.json', 'application/json');
+        'bpmn-rossilber-map.json', 'application/json');
     showToast('JSON сохранён');
 }
 function loadJsonFile(file) {
@@ -1969,7 +1970,7 @@ function exportSvg() {
     vp.removeAttribute('transform');
     const ser = new XMLSerializer().serializeToString(clone);
     downloadFile('<?xml version="1.0" encoding="UTF-8"?>\n' + ser,
-        'bpmn-future-map.svg', 'image/svg+xml');
+        'bpmn-rossilber-map.svg', 'image/svg+xml');
     showToast('SVG экспортирован');
 }
 
@@ -2001,7 +2002,7 @@ function exportPng() {
         canvas.toBlob((b) => {
             const a = document.createElement('a');
             a.href = URL.createObjectURL(b);
-            a.download = 'bpmn-future-map.png';
+            a.download = 'bpmn-rossilber-map.png';
             a.click();
             setTimeout(()=>URL.revokeObjectURL(a.href), 500);
             showToast('PNG экспортирован');
