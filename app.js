@@ -1124,6 +1124,12 @@ function handleToolAction(action) {
         case 'fit': fitToContent(); break;
         case 'delete': deleteSelection(); break;
         case 'duplicate': duplicateSelection(); break;
+        case 'undo': undo(); break;
+        case 'redo': redo(); break;
+        case 'save': saveJson(); break;
+        case 'open': document.getElementById('fileInput').click(); break;
+        case 'export-svg': exportSvg(); break;
+        case 'export-png': exportPng(); break;
         case 'front':
         case 'back':
             for (const id of state.selection.nodes) {
@@ -1131,9 +1137,12 @@ function handleToolAction(action) {
                 if (n) n.z = (action === 'front' ? 100 : -100);
             }
             renderAll(); break;
-        case 'help': document.getElementById('helpModal').classList.add('open'); break;
+        case 'help':
+            renderLegendInHelp();
+            document.getElementById('helpModal').classList.add('open');
+            break;
         case 'new': newMap(); break;
-        default: /* other actions later */ break;
+        default: break;
     }
 }
 
@@ -1141,8 +1150,18 @@ function initKeyboard() {
     window.addEventListener('keydown', (e) => {
         if (isEditingText()) return;
         const meta = e.ctrlKey || e.metaKey;
+        const key = e.key.toLowerCase();
         if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(); e.preventDefault(); }
-        else if (meta && e.key.toLowerCase() === 'd') { duplicateSelection(); e.preventDefault(); }
+        else if (meta && key === 'd') { duplicateSelection(); e.preventDefault(); }
+        else if (meta && key === 'z') { if (e.shiftKey) redo(); else undo(); e.preventDefault(); }
+        else if (meta && key === 'y') { redo(); e.preventDefault(); }
+        else if (meta && key === 's') { saveJson(); e.preventDefault(); }
+        else if (meta && key === 'c') { copySelection(); e.preventDefault(); }
+        else if (meta && key === 'v') { pasteClipboard(); e.preventDefault(); }
+        else if (meta && key === 'a') {
+            state.nodes.forEach(n => state.selection.nodes.add(n.id));
+            syncSelectionDom(); renderProps(); e.preventDefault();
+        }
         else if (e.key === '+' || e.key === '=') zoomAt(innerWidth/2, innerHeight/2, 1.15);
         else if (e.key === '-') zoomAt(innerWidth/2, innerHeight/2, 1/1.15);
         else if (e.key === '0') { state.camera.zoom = 1; applyCamera(); }
@@ -1150,6 +1169,7 @@ function initKeyboard() {
             const step = e.shiftKey ? 10 : 1;
             const dx = e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
             const dy = e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
+            pushHistory();
             for (const id of state.selection.nodes) {
                 const n = state.nodes.find(x=>x.id===id);
                 if (n){ n.x += dx; n.y += dy; }
@@ -1163,6 +1183,33 @@ function initKeyboard() {
         b.addEventListener('click', () => b.closest('.modal')?.classList.remove('open')));
     document.querySelectorAll('.modal').forEach(m =>
         m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('open'); }));
+
+    // file input for loading
+    const fi = document.getElementById('fileInput');
+    if (fi) fi.addEventListener('change', (e) => {
+        const f = e.target.files[0];
+        if (f) loadJsonFile(f);
+        fi.value = '';
+    });
+
+    // autosave to localStorage
+    setInterval(() => {
+        try {
+            localStorage.setItem('bpmn-future-autosave',
+                JSON.stringify({ nodes: state.nodes, edges: state.edges }));
+        } catch {}
+    }, 5000);
+    try {
+        const saved = localStorage.getItem('bpmn-future-autosave');
+        if (saved) {
+            const d = JSON.parse(saved);
+            if (d.nodes?.length) {
+                state.nodes = d.nodes;
+                state.edges = d.edges || [];
+                renderAll();
+            }
+        }
+    } catch {}
 }
 
 function deleteSelection() {
@@ -1328,8 +1375,179 @@ function clientToWorld(cx, cy) {
 }
 function snap(v) { return state.snap ? Math.round(v/state.grid)*state.grid : v; }
 
-/* ---------- history stub ---------- */
-function pushHistory() { /* filled later */ }
+/* ---------- history (undo/redo) ---------- */
+let historySuspended = false;
+function pushHistory() {
+    if (historySuspended) return;
+    const snap = JSON.stringify({ nodes: state.nodes, edges: state.edges });
+    // drop forward stack
+    if (state.historyPos < state.history.length - 1) {
+        state.history = state.history.slice(0, state.historyPos + 1);
+    }
+    // skip duplicates
+    if (state.history[state.historyPos] === snap) return;
+    state.history.push(snap);
+    if (state.history.length > 120) state.history.shift();
+    state.historyPos = state.history.length - 1;
+}
+function undo() {
+    if (state.historyPos <= 0) return;
+    state.historyPos--;
+    restoreFrom(state.history[state.historyPos]);
+}
+function redo() {
+    if (state.historyPos >= state.history.length - 1) return;
+    state.historyPos++;
+    restoreFrom(state.history[state.historyPos]);
+}
+function restoreFrom(s) {
+    const parsed = JSON.parse(s);
+    state.nodes = parsed.nodes;
+    state.edges = parsed.edges;
+    state.selection.nodes.clear();
+    state.selection.edges.clear();
+    renderAll();
+    renderProps();
+}
+
+/* ---------- export / import ---------- */
+function saveJson() {
+    const data = {
+        version: 1,
+        createdAt: new Date().toISOString(),
+        nodes: state.nodes,
+        edges: state.edges,
+    };
+    downloadFile(JSON.stringify(data, null, 2),
+        'bpmn-future-map.json', 'application/json');
+    showToast('JSON сохранён');
+}
+function loadJsonFile(file) {
+    const rd = new FileReader();
+    rd.onload = () => {
+        try {
+            const data = JSON.parse(rd.result);
+            if (!data.nodes) throw new Error('no nodes');
+            pushHistory();
+            state.nodes = data.nodes;
+            state.edges = data.edges || [];
+            state.selection.nodes.clear();
+            state.selection.edges.clear();
+            renderAll();
+            renderProps();
+            showToast('Карта загружена');
+        } catch(err) {
+            alert('Не удалось разобрать файл: ' + err.message);
+        }
+    };
+    rd.readAsText(file);
+}
+
+function exportSvg() {
+    const clone = svg.cloneNode(true);
+    // remove overlay (handles, ports, marquee)
+    clone.querySelectorAll('#layer-overlay *').forEach(el => el.remove());
+    // size: use bbox of content
+    const bbox = bboxOfContent();
+    clone.setAttribute('width',  bbox.w);
+    clone.setAttribute('height', bbox.h);
+    clone.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.w} ${bbox.h}`);
+    clone.querySelector('#gridRect')?.remove();
+    // reset transform of viewport
+    const vp = clone.querySelector('#viewport');
+    vp.removeAttribute('transform');
+    const ser = new XMLSerializer().serializeToString(clone);
+    downloadFile('<?xml version="1.0" encoding="UTF-8"?>\n' + ser,
+        'bpmn-future-map.svg', 'image/svg+xml');
+    showToast('SVG экспортирован');
+}
+
+function exportPng() {
+    const bbox = bboxOfContent();
+    const scale = 2;
+    const clone = svg.cloneNode(true);
+    clone.querySelectorAll('#layer-overlay *').forEach(el => el.remove());
+    clone.querySelector('#gridRect')?.remove();
+    const vp = clone.querySelector('#viewport');
+    vp.removeAttribute('transform');
+    clone.setAttribute('width',  bbox.w);
+    clone.setAttribute('height', bbox.h);
+    clone.setAttribute('viewBox', `${bbox.x} ${bbox.y} ${bbox.w} ${bbox.h}`);
+    const serial = new XMLSerializer().serializeToString(clone);
+    const svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n' + serial;
+    const img = new Image();
+    const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = bbox.w * scale;
+        canvas.height = bbox.h * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob((b) => {
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(b);
+            a.download = 'bpmn-future-map.png';
+            a.click();
+            setTimeout(()=>URL.revokeObjectURL(a.href), 500);
+            showToast('PNG экспортирован');
+        });
+    };
+    img.onerror = () => { alert('Ошибка экспорта PNG'); URL.revokeObjectURL(url); };
+    img.src = url;
+}
+function bboxOfContent() {
+    if (state.nodes.length === 0) return { x:0, y:0, w:400, h:300 };
+    const pad = 40;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for (const n of state.nodes) {
+        minX = Math.min(minX, n.x);
+        minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x+n.w);
+        maxY = Math.max(maxY, n.y+n.h);
+    }
+    return { x: minX-pad, y: minY-pad, w: (maxX-minX)+pad*2, h: (maxY-minY)+pad*2 };
+}
+function downloadFile(content, filename, type) {
+    const blob = new Blob([content], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 500);
+}
+
+/* ---------- clipboard ---------- */
+function copySelection() {
+    const nodes = state.nodes.filter(n => state.selection.nodes.has(n.id));
+    const ids = new Set(nodes.map(n=>n.id));
+    const edges = state.edges.filter(e => ids.has(e.source.id) && ids.has(e.target.id));
+    state.clipboard = JSON.parse(JSON.stringify({ nodes, edges }));
+}
+function pasteClipboard() {
+    if (!state.clipboard) return;
+    pushHistory();
+    const idMap = {};
+    const newNodes = state.clipboard.nodes.map(n => {
+        const nn = { ...n, id: uid(), x: n.x+20, y: n.y+20 };
+        idMap[n.id] = nn.id;
+        return nn;
+    });
+    const newEdges = state.clipboard.edges.map(e => ({
+        ...e, id: uid(),
+        source:{ id: idMap[e.source.id], port: e.source.port },
+        target:{ id: idMap[e.target.id], port: e.target.port },
+    }));
+    state.nodes.push(...newNodes);
+    state.edges.push(...newEdges);
+    state.selection.nodes = new Set(newNodes.map(n=>n.id));
+    state.selection.edges.clear();
+    renderAll();
+    renderProps();
+}
 
 /* ---------- properties panel ---------- */
 const COLOR_PRESETS = [
