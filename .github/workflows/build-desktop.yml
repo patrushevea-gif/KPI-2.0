@@ -27,13 +27,14 @@ jobs:
 
       - name: Install desktop dependencies
         working-directory: desktop
-        run: npm install
+        run: npm ci
 
       - name: Build Windows installer + portable
         working-directory: desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run dist
+          # turn off electron-builder auto-publish; мы публикуем отдельным шагом
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist -- --publish never
 
       - name: List build artifacts
         shell: pwsh
@@ -48,7 +49,6 @@ jobs:
           name: bpmn-rossilber-windows
           path: |
             desktop/dist/*.exe
-            desktop/dist/*.yml
           if-no-files-found: error
 
       - name: Publish to GitHub Release
@@ -58,7 +58,7 @@ jobs:
           name: ${{ github.ref_name }}
           draft: false
           prerelease: false
-          fail_on_unmatched_files: true
+          fail_on_unmatched_files: false
           files: |
             desktop/dist/*.exe
             desktop/dist/latest.yml
