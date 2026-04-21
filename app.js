@@ -499,8 +499,128 @@ function toggleEmptyHint() {
     emptyHint.style.display = state.nodes.length ? 'none' : 'block';
 }
 
-/* edges are filled in a later step */
-function renderEdge(_e) { return null; }
+function renderEdge(e) {
+    const src = state.nodes.find(n => n.id === e.source.id);
+    const dst = state.nodes.find(n => n.id === e.target.id);
+    if (!src || !dst) return null;
+
+    // auto choose sides if they collide
+    const srcSide = e.source.port || bestSide(src, dst);
+    const dstSide = e.target.port || bestSide(dst, src);
+    const a = portPoint(src, srcSide);
+    const b = portPoint(dst, dstSide);
+
+    const d = routeEdgeBetween(a, b, srcSide, dstSide);
+    const g = svgEl('g', { 'data-id':e.id,
+        class: 'edge edge-' + (e.kind||'sequence') + (state.selection.edges.has(e.id) ? ' selected' : '')
+    });
+
+    // hit box
+    const hit = svgEl('path', { class:'edge-hit', d });
+    g.appendChild(hit);
+
+    const path = svgEl('path', {
+        class:'edge-path', d,
+        stroke: e.color || '#1f2937',
+        'stroke-width': e.strokeWidth || 1.6,
+        fill:'none',
+    });
+    if (e.kind === 'message') {
+        path.setAttribute('stroke-dasharray', '6 4');
+        path.setAttribute('marker-start', 'url(#arrow-circle)');
+        path.setAttribute('marker-end', 'url(#arrow-open)');
+    } else if (e.kind === 'association') {
+        path.setAttribute('stroke-dasharray', '2 3');
+    } else {
+        path.setAttribute('marker-end', 'url(#arrow)');
+    }
+    if (e.conditional) {
+        // add small diamond at start
+        const diamondD = `M ${a.x} ${a.y} m -6 0 l 6 -5 l 6 5 l -6 5 z`;
+        g.appendChild(svgEl('path', { d: diamondD, fill:'#fff', stroke:e.color||'#1f2937','stroke-width':1.4 }));
+    }
+    g.appendChild(path);
+
+    if (e.label) {
+        // label at midpoint of path (approximate — middle of bounding box of endpoints)
+        const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        const t = svgEl('text', { class:'edge-label', x:mx, y:my-6, 'text-anchor':'middle' });
+        t.textContent = e.label;
+        g.appendChild(t);
+    }
+
+    // click to select
+    hit.addEventListener('mousedown', (ev) => {
+        ev.stopPropagation();
+        if (!ev.shiftKey) {
+            state.selection.nodes.clear();
+            state.selection.edges.clear();
+        }
+        state.selection.edges.add(e.id);
+        syncSelectionDom();
+        renderProps();
+    });
+    // double-click: edit label
+    hit.addEventListener('dblclick', (ev) => {
+        ev.stopPropagation();
+        const lbl = prompt('Подпись стрелки:', e.label || '');
+        if (lbl !== null) {
+            pushHistory();
+            e.label = lbl;
+            renderAll();
+        }
+    });
+    return g;
+}
+
+function bestSide(from, to) {
+    const fx = from.x + from.w/2, fy = from.y + from.h/2;
+    const tx = to.x + to.w/2,     ty = to.y + to.h/2;
+    const dx = tx - fx, dy = ty - fy;
+    if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? 'e' : 'w';
+    return dy > 0 ? 's' : 'n';
+}
+
+function routeEdgeBetween(a, b, aSide, bSide) {
+    if (!state.ortho) return `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+    const off = 24;
+    const ax1 = a.x + (aSide==='e'?off : aSide==='w'?-off:0);
+    const ay1 = a.y + (aSide==='s'?off : aSide==='n'?-off:0);
+    const bx1 = b.x + (bSide==='e'?off : bSide==='w'?-off:0);
+    const by1 = b.y + (bSide==='s'?off : bSide==='n'?-off:0);
+    const aHoriz = aSide === 'e' || aSide === 'w';
+    const bHoriz = bSide === 'e' || bSide === 'w';
+
+    let path;
+    if (aHoriz && bHoriz) {
+        const mx = (ax1 + bx1) / 2;
+        path = `M ${a.x} ${a.y} L ${ax1} ${a.y} L ${mx} ${a.y} L ${mx} ${b.y} L ${bx1} ${b.y} L ${b.x} ${b.y}`;
+    } else if (!aHoriz && !bHoriz) {
+        const my = (ay1 + by1) / 2;
+        path = `M ${a.x} ${a.y} L ${a.x} ${ay1} L ${a.x} ${my} L ${b.x} ${my} L ${b.x} ${by1} L ${b.x} ${b.y}`;
+    } else if (aHoriz) {
+        path = `M ${a.x} ${a.y} L ${ax1} ${a.y} L ${b.x} ${a.y} L ${b.x} ${b.y}`;
+    } else {
+        path = `M ${a.x} ${a.y} L ${a.x} ${b.y} L ${b.x} ${b.y}`;
+    }
+    return path;
+}
+
+function redrawIncidentEdges(nodeIds) {
+    const ids = new Set(nodeIds);
+    for (const e of state.edges) {
+        if (ids.has(e.source.id) || ids.has(e.target.id)) {
+            const g = els.edges.get(e.id);
+            if (g) {
+                const fresh = renderEdge(e);
+                if (fresh) {
+                    g.parentNode.replaceChild(fresh, g);
+                    els.edges.set(e.id, fresh);
+                }
+            }
+        }
+    }
+}
 
 /* ---------- factory: add node ---------- */
 function createNode(kind, x, y, overrides = {}) {
@@ -553,6 +673,7 @@ function main() {
     initPaletteDrag();
     initCanvasInteraction();
     initZoomAndPan();
+    initInlineEditor();
     initToolbar();
     initKeyboard();
     renderAll();
@@ -903,6 +1024,67 @@ function zoomAt(cx, cy, factor) {
 function isEditingText() {
     const ae = document.activeElement;
     return ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+}
+
+/* ---------- inline text editor on double-click ---------- */
+function initInlineEditor() {
+    svg.addEventListener('dblclick', (e) => {
+        const nodeEl = e.target.closest('[data-id]');
+        if (!nodeEl) return;
+        const n = state.nodes.find(x => x.id === nodeEl.dataset.id);
+        if (!n) return;
+        openTextEditor(n);
+    });
+}
+
+function openTextEditor(node) {
+    // position editor over node (in screen coords)
+    const svgRect = svg.getBoundingClientRect();
+    const x = svgRect.left + state.camera.x + node.x * state.camera.zoom;
+    const y = svgRect.top  + state.camera.y + node.y * state.camera.zoom;
+    const w = node.w * state.camera.zoom;
+    const h = node.h * state.camera.zoom;
+
+    const ed = document.createElement('div');
+    ed.className = 'text-editor';
+    ed.contentEditable = 'true';
+    ed.textContent = node.text || '';
+    ed.style.left = `${x}px`;
+    ed.style.top = `${y}px`;
+    ed.style.width = `${w}px`;
+    ed.style.minHeight = `${h}px`;
+    ed.style.fontSize = `${(node.fontSize||13) * state.camera.zoom}px`;
+    ed.style.fontWeight = node.fontWeight || 500;
+    ed.style.color = node.textColor || '#111827';
+    ed.style.display = 'flex';
+    ed.style.alignItems = 'center';
+    ed.style.justifyContent = 'center';
+    document.body.appendChild(ed);
+
+    // focus + select
+    ed.focus();
+    const range = document.createRange();
+    range.selectNodeContents(ed);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const commit = () => {
+        pushHistory();
+        node.text = ed.innerText.trim();
+        ed.remove();
+        renderAll();
+        renderProps();
+        document.removeEventListener('mousedown', outside, true);
+    };
+    const cancel = () => { ed.remove(); document.removeEventListener('mousedown', outside, true); };
+    const outside = (ev) => { if (!ed.contains(ev.target)) commit(); };
+
+    setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
+    ed.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); commit(); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+    });
 }
 
 /* ---------- toolbar & keyboard stubs (filled later) ---------- */
