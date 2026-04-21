@@ -1331,8 +1331,224 @@ function snap(v) { return state.snap ? Math.round(v/state.grid)*state.grid : v; 
 /* ---------- history stub ---------- */
 function pushHistory() { /* filled later */ }
 
-/* ---------- props stub ---------- */
-function renderProps() { /* filled later */ }
+/* ---------- properties panel ---------- */
+const COLOR_PRESETS = [
+    '#ffffff','#f3f4f6','#eaf1ff','#dbeafe','#dcfce7','#fde68a','#fee2e2','#f3e8ff',
+    '#1d2a48','#2c66f5','#7b5cfa','#10b981','#f59e0b','#ef4444','#6b7280','transparent'
+];
+const STROKE_PRESETS = [
+    '#111827','#1d2a48','#2c66f5','#7b5cfa','#10b981','#f59e0b','#ef4444','#6b7280','#4338ca','#0891b2','#b45309','#ffffff'
+];
+
+function renderProps() {
+    if (!propsBody) return;
+    const nodeIds = [...state.selection.nodes];
+    const edgeIds = [...state.selection.edges];
+
+    if (nodeIds.length === 0 && edgeIds.length === 0) {
+        propsBody.innerHTML = `
+            <div class="props-empty">
+                <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#9aa3b2" stroke-width="1.6">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                <p>Выделите фигуру или стрелку, чтобы изменить её свойства.</p>
+            </div>`;
+        return;
+    }
+    if (edgeIds.length === 1 && nodeIds.length === 0) {
+        renderEdgeProps(state.edges.find(e => e.id === edgeIds[0]));
+        return;
+    }
+    if (nodeIds.length >= 1) {
+        const first = state.nodes.find(n => n.id === nodeIds[0]);
+        renderNodeProps(first, nodeIds.length);
+    }
+}
+
+function renderNodeProps(node, count) {
+    const def = SHAPES[node.kind];
+    const html = `
+        <div class="prop-group">
+            <h5>${count > 1 ? `${count} элементов выделено` : def.label}</h5>
+            <div class="prop-row full">
+                <div class="prop-field">
+                    <label>Текст</label>
+                    <textarea data-prop="text">${escapeXml(node.text || '')}</textarea>
+                </div>
+            </div>
+            <div class="prop-row">
+                <div class="prop-field"><label>Размер шрифта</label>
+                    <input type="number" min="8" max="64" data-prop="fontSize" value="${node.fontSize||13}"/></div>
+                <div class="prop-field"><label>Толщина шрифта</label>
+                    <select data-prop="fontWeight">
+                        ${[400,500,600,700,800].map(w=>`<option value="${w}"${(node.fontWeight||500)==w?' selected':''}>${w}</option>`).join('')}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="prop-group">
+            <h5>Заливка</h5>
+            <div class="color-row" data-colorset="fill">
+                ${COLOR_PRESETS.map(c => colorDot(c, node.fill === c)).join('')}
+            </div>
+            <input type="color" data-prop="fill" value="${node.fill==='transparent'?'#ffffff':(node.fill||'#ffffff')}" style="width:100%;margin-top:6px;height:28px;border:1px solid var(--border);border-radius:6px;"/>
+        </div>
+
+        <div class="prop-group">
+            <h5>Контур / Текст</h5>
+            <div class="color-row" data-colorset="stroke">
+                ${STROKE_PRESETS.map(c => colorDot(c, node.stroke === c)).join('')}
+            </div>
+            <div class="prop-row">
+                <div class="prop-field"><label>Толщина</label>
+                    <input type="number" step="0.2" min="0.5" max="6" data-prop="strokeWidth" value="${node.strokeWidth||1.4}"/></div>
+                <div class="prop-field"><label>Цвет текста</label>
+                    <input type="color" data-prop="textColor" value="${node.textColor||'#111827'}"/></div>
+            </div>
+            <div class="prop-field check">
+                <input type="checkbox" id="pdashed" data-prop="dashed" ${node.dashed?'checked':''}/>
+                <label for="pdashed">Пунктирный контур</label>
+            </div>
+        </div>
+
+        <div class="prop-group">
+            <h5>Размер и позиция</h5>
+            <div class="prop-row">
+                <div class="prop-field"><label>X</label><input type="number" data-prop="x" value="${node.x}"/></div>
+                <div class="prop-field"><label>Y</label><input type="number" data-prop="y" value="${node.y}"/></div>
+            </div>
+            <div class="prop-row">
+                <div class="prop-field"><label>Ширина</label><input type="number" min="20" data-prop="w" value="${node.w}"/></div>
+                <div class="prop-field"><label>Высота</label><input type="number" min="20" data-prop="h" value="${node.h}"/></div>
+            </div>
+        </div>
+
+        <div class="prop-group">
+            <h5>Методология SDCA</h5>
+            <div class="prop-field check">
+                <input type="checkbox" id="pcrit" data-prop="critical" ${node.critical?'checked':''}/>
+                <label for="pcrit">Критичный элемент</label>
+            </div>
+            <div class="prop-row">
+                <div class="prop-field"><label>Уровень</label>
+                    <select data-prop="level">
+                        ${[1,2,3,4,5].map(l=>`<option value="${l}"${(node.level||2)==l?' selected':''}>Уровень ${l}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="prop-field"><label>RACI</label>
+                    <input type="text" data-prop="raci" placeholder="R/A/C/I" value="${escapeXml(node.raci||'')}"/>
+                </div>
+            </div>
+            <div class="prop-row">
+                <div class="prop-field"><label>PI</label><input type="text" data-prop="pi" value="${escapeXml(node.pi||'')}"/></div>
+                <div class="prop-field"><label>KPI</label><input type="text" data-prop="kpi" value="${escapeXml(node.kpi||'')}"/></div>
+            </div>
+            <div class="prop-row full">
+                <div class="prop-field"><label>SOP / OPL</label><input type="text" data-prop="sop" value="${escapeXml(node.sop||'')}"/></div>
+            </div>
+        </div>
+
+        <div class="prop-group">
+            <div class="btn-row">
+                <button class="mini-btn" data-act="dup">Дублировать</button>
+                <button class="mini-btn" data-act="front">На передний</button>
+                <button class="mini-btn" data-act="back">На задний</button>
+                <button class="mini-btn danger" data-act="del">Удалить</button>
+            </div>
+        </div>
+    `;
+    propsBody.innerHTML = html;
+
+    bindPropInputs(() => [...state.selection.nodes].map(id => state.nodes.find(n=>n.id===id)).filter(Boolean));
+
+    propsBody.querySelectorAll('[data-act]').forEach(b => {
+        b.addEventListener('click', () => {
+            const a = b.dataset.act;
+            if (a==='dup') duplicateSelection();
+            else if (a==='front') handleToolAction('front');
+            else if (a==='back')  handleToolAction('back');
+            else if (a==='del')   deleteSelection();
+        });
+    });
+}
+
+function colorDot(c, active) {
+    const safe = c === 'transparent' ? '' : c;
+    return `<div class="color-dot${c==='transparent'?' none':''}${active?' active':''}"
+        data-color="${c}" style="${safe?`background:${safe};`:''}"></div>`;
+}
+
+function bindPropInputs(getTargets) {
+    propsBody.querySelectorAll('[data-prop]').forEach(inp => {
+        const key = inp.dataset.prop;
+        inp.addEventListener('input', () => {
+            pushHistory();
+            let val = inp.type === 'checkbox' ? inp.checked :
+                      inp.type === 'number' ? +inp.value :
+                      inp.value;
+            for (const t of getTargets()) t[key] = val;
+            renderAll();
+        });
+    });
+    propsBody.querySelectorAll('[data-colorset]').forEach(set => {
+        const key = set.dataset.colorset;
+        set.addEventListener('click', (e) => {
+            const d = e.target.closest('.color-dot');
+            if (!d) return;
+            pushHistory();
+            const c = d.dataset.color;
+            for (const t of getTargets()) t[key] = c;
+            renderAll();
+            renderProps();
+        });
+    });
+}
+
+function renderEdgeProps(edge) {
+    if (!edge) return;
+    propsBody.innerHTML = `
+        <div class="prop-group">
+            <h5>Стрелка</h5>
+            <div class="prop-row full">
+                <div class="prop-field"><label>Подпись</label>
+                    <input type="text" data-eprop="label" value="${escapeXml(edge.label||'')}"/>
+                </div>
+            </div>
+            <div class="prop-row full">
+                <div class="prop-field"><label>Тип</label>
+                    <select data-eprop="kind">
+                        <option value="sequence"${edge.kind==='sequence'?' selected':''}>Поток управления</option>
+                        <option value="message"${edge.kind==='message'?' selected':''}>Поток сообщений (пунктир)</option>
+                        <option value="association"${edge.kind==='association'?' selected':''}>Ассоциация (точки)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="prop-field check">
+                <input type="checkbox" id="econd" data-eprop="conditional" ${edge.conditional?'checked':''}/>
+                <label for="econd">Условный (ромбик в начале)</label>
+            </div>
+            <div class="prop-row">
+                <div class="prop-field"><label>Цвет</label>
+                    <input type="color" data-eprop="color" value="${edge.color||'#1f2937'}"/></div>
+                <div class="prop-field"><label>Толщина</label>
+                    <input type="number" step="0.2" min="0.8" max="6" data-eprop="strokeWidth" value="${edge.strokeWidth||1.6}"/></div>
+            </div>
+            <div class="btn-row" style="margin-top:10px;">
+                <button class="mini-btn danger" data-act="del">Удалить стрелку</button>
+            </div>
+        </div>
+    `;
+    propsBody.querySelectorAll('[data-eprop]').forEach(inp => {
+        inp.addEventListener('input', () => {
+            pushHistory();
+            const key = inp.dataset.eprop;
+            let v = inp.type==='checkbox'?inp.checked:inp.type==='number'?+inp.value:inp.value;
+            edge[key] = v;
+            renderAll();
+        });
+    });
+    propsBody.querySelector('[data-act="del"]').addEventListener('click', deleteSelection);
+}
 
 /* ---------- camera ---------- */
 function applyCamera() {
