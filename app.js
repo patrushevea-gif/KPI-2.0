@@ -674,6 +674,175 @@ function syncSelectionDom() {
     for (const [id, g] of els.edges) {
         g.classList.toggle('selected', state.selection.edges.has(id));
     }
+    renderSelectionOverlay();
+}
+
+/* ---------- resize handles overlay ---------- */
+function renderSelectionOverlay() {
+    // clear previous handles
+    layerOverlay.querySelectorAll('.sel-overlay').forEach(el => el.remove());
+    if (state.selection.nodes.size !== 1) return;
+    const id = [...state.selection.nodes][0];
+    const n = state.nodes.find(x=>x.id===id);
+    if (!n) return;
+    const g = svgEl('g', { class:'sel-overlay', 'data-node':id });
+    // 8 handles
+    const pts = [
+        { k:'nw', x:n.x,           y:n.y },
+        { k:'n',  x:n.x+n.w/2,     y:n.y },
+        { k:'ne', x:n.x+n.w,       y:n.y },
+        { k:'e',  x:n.x+n.w,       y:n.y+n.h/2 },
+        { k:'se', x:n.x+n.w,       y:n.y+n.h },
+        { k:'s',  x:n.x+n.w/2,     y:n.y+n.h },
+        { k:'sw', x:n.x,           y:n.y+n.h },
+        { k:'w',  x:n.x,           y:n.y+n.h/2 },
+    ];
+    for (const p of pts) {
+        const h = svgEl('rect', {
+            class:'handle ' + p.k,
+            x: p.x - 4, y: p.y - 4, width: 8, height: 8,
+            'data-handle': p.k
+        });
+        g.appendChild(h);
+    }
+    // connection ports (blue circles)
+    const ports = [
+        { side:'n', x:n.x+n.w/2, y:n.y     },
+        { side:'e', x:n.x+n.w,   y:n.y+n.h/2 },
+        { side:'s', x:n.x+n.w/2, y:n.y+n.h },
+        { side:'w', x:n.x,       y:n.y+n.h/2 },
+    ];
+    for (const p of ports) {
+        g.appendChild(svgEl('circle', {
+            class:'port', cx:p.x, cy:p.y, r:5,
+            fill:'#2c66f5', stroke:'#fff','stroke-width':2,
+            'data-port':p.side, 'data-node':n.id,
+            style:'cursor:crosshair'
+        }));
+    }
+    layerOverlay.appendChild(g);
+    attachHandleListeners(g, n);
+}
+
+function attachHandleListeners(overlayG, node) {
+    let mode = null; // 'resize' | 'connect'
+    let anchor = null, handleKind = null;
+    let connectEdgeEl = null, connectFromNode = null, connectFromPort = null;
+
+    overlayG.addEventListener('mousedown', (e) => {
+        const h = e.target.closest('.handle');
+        const p = e.target.closest('.port');
+        if (h) {
+            e.stopPropagation();
+            e.preventDefault();
+            mode = 'resize';
+            handleKind = h.dataset.handle;
+            anchor = { x0:node.x, y0:node.y, w0:node.w, h0:node.h,
+                       start: clientToWorld(e.clientX, e.clientY) };
+            pushHistory();
+        } else if (p) {
+            e.stopPropagation();
+            e.preventDefault();
+            mode = 'connect';
+            connectFromNode = node;
+            connectFromPort = p.dataset.port;
+            connectEdgeEl = svgEl('path', { class:'edge-path', d:'M 0 0',
+                stroke:'#2c66f5','stroke-dasharray':'5 3', 'marker-end':'url(#arrow)' });
+            layerOverlay.appendChild(connectEdgeEl);
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!mode) return;
+        const pt = clientToWorld(e.clientX, e.clientY);
+        if (mode === 'resize') {
+            let { x0, y0, w0, h0, start } = anchor;
+            let dx = pt.x - start.x, dy = pt.y - start.y;
+            let nx = x0, ny = y0, nw = w0, nh = h0;
+            if (handleKind.includes('e')) nw = Math.max(30, w0 + dx);
+            if (handleKind.includes('s')) nh = Math.max(30, h0 + dy);
+            if (handleKind.includes('w')) { nw = Math.max(30, w0 - dx); nx = x0 + (w0 - nw); }
+            if (handleKind.includes('n')) { nh = Math.max(30, h0 - dy); ny = y0 + (h0 - nh); }
+            node.x = snap(nx); node.y = snap(ny);
+            node.w = snap(nw); node.h = snap(nh);
+            const g = els.nodes.get(node.id);
+            if (g) {
+                // re-render this node only
+                const parent = g.parentNode;
+                const fresh = renderNode(node);
+                parent.replaceChild(fresh, g);
+                els.nodes.set(node.id, fresh);
+            }
+            renderSelectionOverlay();
+            redrawIncidentEdges([node.id]);
+        } else if (mode === 'connect') {
+            const from = portPoint(connectFromNode, connectFromPort);
+            const path = routeEdge(from, pt, connectFromPort, null);
+            connectEdgeEl.setAttribute('d', path);
+        }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+        if (mode === 'connect') {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            const nodeEl = target && target.closest('[data-id]');
+            if (nodeEl && nodeEl.dataset.id !== connectFromNode.id) {
+                const targetNode = state.nodes.find(x => x.id === nodeEl.dataset.id);
+                if (targetNode) {
+                    pushHistory();
+                    const targetPort = nearestPort(targetNode,
+                        clientToWorld(e.clientX, e.clientY));
+                    state.edges.push({
+                        id: uid(),
+                        source: { id: connectFromNode.id, port: connectFromPort },
+                        target: { id: targetNode.id, port: targetPort },
+                        kind: 'sequence',
+                        label: '',
+                    });
+                    renderAll();
+                    renderProps();
+                }
+            }
+            if (connectEdgeEl) connectEdgeEl.remove();
+        }
+        mode = null; anchor = null;
+        connectEdgeEl = null; connectFromNode = null; connectFromPort = null;
+    });
+}
+
+/* ---------- port helpers ---------- */
+function portPoint(node, side) {
+    switch (side) {
+        case 'n': return { x: node.x + node.w/2, y: node.y };
+        case 's': return { x: node.x + node.w/2, y: node.y + node.h };
+        case 'w': return { x: node.x,            y: node.y + node.h/2 };
+        case 'e': return { x: node.x + node.w,   y: node.y + node.h/2 };
+    }
+    return { x: node.x + node.w/2, y: node.y + node.h/2 };
+}
+function nearestPort(node, pt) {
+    const sides = ['n','e','s','w'];
+    let best = 'e', bestD = Infinity;
+    for (const s of sides) {
+        const p = portPoint(node, s);
+        const d = (p.x-pt.x)**2 + (p.y-pt.y)**2;
+        if (d < bestD) { bestD = d; best = s; }
+    }
+    return best;
+}
+
+/* ---------- edge routing (placeholder, finalized in connectors step) ---------- */
+function routeEdge(from, to, fromSide, toSide) {
+    if (!state.ortho) {
+        return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+    }
+    const mx = (from.x + to.x) / 2;
+    const my = (from.y + to.y) / 2;
+    const isHoriz = fromSide === 'e' || fromSide === 'w';
+    if (isHoriz) {
+        return `M ${from.x} ${from.y} L ${mx} ${from.y} L ${mx} ${to.y} L ${to.x} ${to.y}`;
+    }
+    return `M ${from.x} ${from.y} L ${from.x} ${my} L ${to.x} ${my} L ${to.x} ${to.y}`;
 }
 
 function redrawIncidentEdges(_nodeIds) { /* filled when edges added */ }
