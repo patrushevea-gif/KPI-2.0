@@ -312,6 +312,56 @@ SHAPES['gateway-event'] = {
         return g;
     },
 };
+SHAPES['gateway-event-instance'] = {
+    label:'Событийный XOR (нов. экз.)', category:'gateways',
+    defaults:{ w:64, h:64, fill:'#fff7cc', stroke:'#b45309', text:'', fontSize:11, strokeWidth:2 },
+    draw: n => {
+        const g = svgEl('g');
+        g.appendChild(drawDiamond(n));
+        const cx = n.w/2, cy = n.h/2;
+        g.appendChild(svgEl('circle',{cx,cy,r:13,fill:'none',stroke:n.stroke,'stroke-width':1.4}));
+        g.appendChild(svgEl('circle',{cx,cy,r:10,fill:'none',stroke:n.stroke,'stroke-width':1.4}));
+        const pent = [];
+        for (let i=0;i<5;i++){
+            const a = -Math.PI/2 + i*2*Math.PI/5;
+            pent.push(`${cx + Math.cos(a)*6},${cy + Math.sin(a)*6}`);
+        }
+        g.appendChild(svgEl('polygon',{points:pent.join(' '),fill:'none',stroke:n.stroke,'stroke-width':1.3}));
+        return g;
+    },
+};
+SHAPES['gateway-parallel-event-instance'] = {
+    label:'Параллельный событийный AND (нов. экз.)', category:'gateways',
+    defaults:{ w:64, h:64, fill:'#fff7cc', stroke:'#b45309', text:'', fontSize:11, strokeWidth:2 },
+    draw: n => {
+        const g = svgEl('g');
+        g.appendChild(drawDiamond(n));
+        const cx = n.w/2, cy = n.h/2;
+        g.appendChild(svgEl('circle',{cx,cy,r:12,fill:'none',stroke:n.stroke,'stroke-width':1.4}));
+        const d = 7;
+        g.appendChild(iconPath(
+            `M ${cx-d} ${cy} h ${2*d} M ${cx} ${cy-d} v ${2*d}`,
+            n.stroke, 1.8));
+        return g;
+    },
+};
+SHAPES['gateway-complex'] = {
+    label:'Комплексный шлюз', category:'gateways',
+    defaults:{ w:64, h:64, fill:'#fff7cc', stroke:'#b45309', text:'', fontSize:11, strokeWidth:2 },
+    draw: n => {
+        const g = svgEl('g');
+        g.appendChild(drawDiamond(n));
+        const cx = n.w/2, cy = n.h/2, d = 11;
+        // star / asterisk — 3 crossing lines
+        g.appendChild(iconPath(
+            `M ${cx-d} ${cy} h ${2*d}
+             M ${cx} ${cy-d} v ${2*d}
+             M ${cx-d*0.7} ${cy-d*0.7} l ${d*1.4} ${d*1.4}
+             M ${cx+d*0.7} ${cy-d*0.7} l ${-d*1.4} ${d*1.4}`,
+            n.stroke, 2.4));
+        return g;
+    },
+};
 
 /* --- data / systems --- */
 SHAPES['data-io'] = {
