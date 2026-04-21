@@ -1070,9 +1070,21 @@ function main() {
     initToolbar();
     initKeyboard();
     initMinimap();
+    initElectronBridge();
     renderAll();
     pushHistory();
     console.info('[BPMN Rossilber] ready');
+}
+
+/* ---------- Electron bridge: меню main-процесса → handleToolAction ---------- */
+function initElectronBridge() {
+    if (!hasElectron()) return;
+    if (typeof window.electronAPI.onMenuAction === 'function') {
+        window.electronAPI.onMenuAction((action) => {
+            try { handleToolAction(action); } catch (err) { console.error(err); }
+        });
+    }
+    document.documentElement.classList.add('is-electron');
 }
 
 /* ---------- context menu ---------- */
@@ -1636,9 +1648,20 @@ function handleToolAction(action) {
         case 'undo': undo(); break;
         case 'redo': redo(); break;
         case 'save': saveJson(); break;
-        case 'open': document.getElementById('fileInput').click(); break;
+        case 'open':
+            if (hasElectron()) {
+                window.electronAPI.openFile().then(r => {
+                    if (r && !r.canceled && r.content) {
+                        loadMapText(r.content, r.filePath || '');
+                    }
+                }).catch(err => alert('Ошибка открытия: ' + err.message));
+            } else {
+                document.getElementById('fileInput').click();
+            }
+            break;
         case 'export-svg': exportSvg(); break;
         case 'export-png': exportPng(); break;
+        case 'export-bpmn': exportBpmnXml(); break;
         case 'front':
         case 'back':
             for (const id of state.selection.nodes) {
@@ -1923,6 +1946,29 @@ function restoreFrom(s) {
 }
 
 /* ---------- export / import ---------- */
+const hasElectron = () => typeof window !== 'undefined' && !!window.electronAPI;
+
+async function nativeSaveText(defaultName, text, filters) {
+    try {
+        const r = await window.electronAPI.saveFile({ defaultName, data: text, filters });
+        if (!r.canceled) showToast('Сохранено: ' + r.filePath.split(/[\\/]/).pop());
+        return !r.canceled;
+    } catch (err) {
+        alert('Ошибка сохранения: ' + err.message);
+        return false;
+    }
+}
+async function nativeSaveBinary(defaultName, base64, filters) {
+    try {
+        const r = await window.electronAPI.saveBinaryFile({ defaultName, dataBase64: base64, filters });
+        if (!r.canceled) showToast('Сохранено: ' + r.filePath.split(/[\\/]/).pop());
+        return !r.canceled;
+    } catch (err) {
+        alert('Ошибка сохранения: ' + err.message);
+        return false;
+    }
+}
+
 function saveJson() {
     const data = {
         version: 1,
@@ -1930,28 +1976,41 @@ function saveJson() {
         nodes: state.nodes,
         edges: state.edges,
     };
-    downloadFile(JSON.stringify(data, null, 2),
-        'bpmn-rossilber-map.json', 'application/json');
+    const text = JSON.stringify(data, null, 2);
+    if (hasElectron()) {
+        nativeSaveText('bpmn-rossilber-map.json', text,
+            [{ name:'JSON', extensions:['json'] }, { name:'Все файлы', extensions:['*'] }]);
+        return;
+    }
+    downloadFile(text, 'bpmn-rossilber-map.json', 'application/json');
     showToast('JSON сохранён');
+}
+function loadMapText(text, nameHint) {
+    const name = (nameHint || '').toLowerCase();
+    const isBpmn = name.endsWith('.bpmn') || name.endsWith('.xml') || /^\s*<\?xml/.test(text);
+    try {
+        let data;
+        if (isBpmn) {
+            data = importBpmnXml(text);
+        } else {
+            data = JSON.parse(text);
+            if (!data.nodes) throw new Error('no nodes');
+        }
+        pushHistory();
+        state.nodes = data.nodes;
+        state.edges = data.edges || [];
+        state.selection.nodes.clear();
+        state.selection.edges.clear();
+        renderAll();
+        renderProps();
+        showToast(isBpmn ? 'BPMN карта загружена' : 'Карта загружена');
+    } catch(err) {
+        alert('Не удалось разобрать файл: ' + err.message);
+    }
 }
 function loadJsonFile(file) {
     const rd = new FileReader();
-    rd.onload = () => {
-        try {
-            const data = JSON.parse(rd.result);
-            if (!data.nodes) throw new Error('no nodes');
-            pushHistory();
-            state.nodes = data.nodes;
-            state.edges = data.edges || [];
-            state.selection.nodes.clear();
-            state.selection.edges.clear();
-            renderAll();
-            renderProps();
-            showToast('Карта загружена');
-        } catch(err) {
-            alert('Не удалось разобрать файл: ' + err.message);
-        }
-    };
+    rd.onload = () => loadMapText(rd.result, file.name || '');
     rd.readAsText(file);
 }
 
@@ -1969,8 +2028,13 @@ function exportSvg() {
     const vp = clone.querySelector('#viewport');
     vp.removeAttribute('transform');
     const ser = new XMLSerializer().serializeToString(clone);
-    downloadFile('<?xml version="1.0" encoding="UTF-8"?>\n' + ser,
-        'bpmn-rossilber-map.svg', 'image/svg+xml');
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + ser;
+    if (hasElectron()) {
+        nativeSaveText('bpmn-rossilber-map.svg', xml,
+            [{ name:'SVG', extensions:['svg'] }, { name:'Все файлы', extensions:['*'] }]);
+        return;
+    }
+    downloadFile(xml, 'bpmn-rossilber-map.svg', 'image/svg+xml');
     showToast('SVG экспортирован');
 }
 
@@ -1999,7 +2063,18 @@ function exportPng() {
         ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
-        canvas.toBlob((b) => {
+        canvas.toBlob(async (b) => {
+            if (hasElectron()) {
+                // read blob as base64 and pass through IPC
+                const fr = new FileReader();
+                fr.onload = () => {
+                    const base64 = String(fr.result).split(',')[1];
+                    nativeSaveBinary('bpmn-rossilber-map.png', base64,
+                        [{ name:'PNG', extensions:['png'] }, { name:'Все файлы', extensions:['*'] }]);
+                };
+                fr.readAsDataURL(b);
+                return;
+            }
             const a = document.createElement('a');
             a.href = URL.createObjectURL(b);
             a.download = 'bpmn-rossilber-map.png';
@@ -2030,6 +2105,349 @@ function downloadFile(content, filename, type) {
     a.download = filename;
     a.click();
     setTimeout(()=>URL.revokeObjectURL(a.href), 500);
+}
+
+/* ---------- BPMN 2.0 XML (OMG) ----------
+   Формат обмена картой между версиями (desktop/browser) и внешними
+   BPMN-инструментами (Camunda Modeler, bpmn.io и др.).
+   Наши SDCA-поля живут в <rossilber:meta .../> (extensionElements).
+   Round-trip lossless: kind + все кастомные поля сохраняются и восстанавливаются.
+----------------------------------------------*/
+const BPMN_NS        = 'http://www.omg.org/spec/BPMN/20100524/MODEL';
+const BPMNDI_NS      = 'http://www.omg.org/spec/BPMN/20100524/DI';
+const DC_NS          = 'http://www.omg.org/spec/DD/20100524/DC';
+const DI_NS          = 'http://www.omg.org/spec/DD/20100524/DI';
+const ROSS_NS        = 'https://rossilber.ru/bpmn-future';
+
+/* kind -> { type, eventDef?, attrs? }
+   "type" — bpmn element name; "eventDef" — имя event-определения если нужно;
+   "attrs" — доп. атрибуты элемента (cancelActivity и т.п.). */
+const BPMN_MAP = {
+    'event-start':                 { type:'startEvent' },
+    'event-intermediate':          { type:'intermediateThrowEvent' },
+    'event-end':                   { type:'endEvent' },
+    'event-timer':                 { type:'intermediateCatchEvent', eventDef:'timerEventDefinition' },
+    'event-start-message':         { type:'startEvent',              eventDef:'messageEventDefinition' },
+    'event-int-message':           { type:'intermediateCatchEvent',  eventDef:'messageEventDefinition' },
+    'event-int-message-throw':     { type:'intermediateThrowEvent',  eventDef:'messageEventDefinition' },
+    'event-end-message':           { type:'endEvent',                eventDef:'messageEventDefinition' },
+    'event-boundary-message-int':  { type:'boundaryEvent', attrs:{cancelActivity:'true'},  eventDef:'messageEventDefinition' },
+    'event-boundary-message-nonint':{type:'boundaryEvent', attrs:{cancelActivity:'false'}, eventDef:'messageEventDefinition' },
+    'event-int-timer':             { type:'intermediateCatchEvent',  eventDef:'timerEventDefinition' },
+    'event-boundary-timer-int':    { type:'boundaryEvent', attrs:{cancelActivity:'true'},  eventDef:'timerEventDefinition' },
+    'event-boundary-timer-nonint': { type:'boundaryEvent', attrs:{cancelActivity:'false'}, eventDef:'timerEventDefinition' },
+    'event-end-terminate':         { type:'endEvent',                eventDef:'terminateEventDefinition' },
+    'event-int-error':             { type:'intermediateCatchEvent',  eventDef:'errorEventDefinition' },
+    'event-boundary-error':        { type:'boundaryEvent', attrs:{cancelActivity:'true'},  eventDef:'errorEventDefinition' },
+    'event-end-error':             { type:'endEvent',                eventDef:'errorEventDefinition' },
+    'event-int-cancel':            { type:'intermediateCatchEvent',  eventDef:'cancelEventDefinition' },
+    'event-end-cancel':            { type:'endEvent',                eventDef:'cancelEventDefinition' },
+    'event-int-compensation':      { type:'intermediateThrowEvent',  eventDef:'compensateEventDefinition' },
+    'event-end-compensation':      { type:'endEvent',                eventDef:'compensateEventDefinition' },
+    'event-int-escalation':        { type:'intermediateThrowEvent',  eventDef:'escalationEventDefinition' },
+    'event-end-escalation':        { type:'endEvent',                eventDef:'escalationEventDefinition' },
+    'event-start-condition':       { type:'startEvent',              eventDef:'conditionalEventDefinition' },
+    'event-int-condition':         { type:'intermediateCatchEvent',  eventDef:'conditionalEventDefinition' },
+    'event-boundary-condition-int':    { type:'boundaryEvent', attrs:{cancelActivity:'true'},  eventDef:'conditionalEventDefinition' },
+    'event-boundary-condition-nonint': { type:'boundaryEvent', attrs:{cancelActivity:'false'}, eventDef:'conditionalEventDefinition' },
+    'event-int-link-catch':        { type:'intermediateCatchEvent',  eventDef:'linkEventDefinition' },
+    'event-int-link-throw':        { type:'intermediateThrowEvent',  eventDef:'linkEventDefinition' },
+    'event-start-signal':          { type:'startEvent',              eventDef:'signalEventDefinition' },
+    'event-int-signal':            { type:'intermediateCatchEvent',  eventDef:'signalEventDefinition' },
+    'event-end-signal':            { type:'endEvent',                eventDef:'signalEventDefinition' },
+    'event-start-complex':         { type:'startEvent' },
+    'event-int-complex':           { type:'intermediateCatchEvent' },
+    'event-end-complex':           { type:'endEvent' },
+    'event-start-parallel-multi':  { type:'startEvent',              attrs:{parallelMultiple:'true'} },
+    'event-int-parallel-multi':    { type:'intermediateCatchEvent',  attrs:{parallelMultiple:'true'} },
+
+    'task':                        { type:'task' },
+    'task-critical':               { type:'task' },
+    'task-manual':                 { type:'manualTask' },
+    'task-auto':                   { type:'serviceTask' },
+    'task-external':               { type:'sendTask' },
+    'subprocess':                  { type:'subProcess' },
+
+    'gateway-x':                   { type:'exclusiveGateway' },
+    'gateway-plus':                { type:'parallelGateway' },
+    'gateway-o':                   { type:'inclusiveGateway' },
+    'gateway-event':               { type:'eventBasedGateway' },
+    'gateway-event-instance':      { type:'eventBasedGateway', attrs:{instantiate:'true'} },
+    'gateway-parallel-event-instance':{ type:'eventBasedGateway', attrs:{instantiate:'true', eventGatewayType:'Parallel'} },
+    'gateway-complex':             { type:'complexGateway' },
+
+    'data-io':                     { type:'dataObjectReference' },
+    'data-object':                 { type:'dataObjectReference' },
+    'data-store':                  { type:'dataStoreReference' },
+    'data-external':               { type:'dataObjectReference' },
+    'data-input':                  { type:'dataObjectReference' },
+    'data-output':                 { type:'dataObjectReference' },
+    'data-collection':             { type:'dataObjectReference', attrs:{isCollection:'true'} },
+    'data-storage':                { type:'dataStoreReference' },
+
+    'pi':                          { type:'textAnnotation' },
+    'kpi':                         { type:'textAnnotation' },
+    'sop':                         { type:'textAnnotation' },
+    'message-initiating':          { type:'textAnnotation' },
+    'message-response':            { type:'textAnnotation' },
+
+    'pool':                        { type:'subProcess' },
+    'lane':                        { type:'subProcess' },
+    'group':                       { type:'group' },
+
+    'annotation':                  { type:'textAnnotation' },
+    'level-header':                { type:'textAnnotation' },
+};
+
+// reverse lookup (bpmn type + eventDef -> kind) для чтения чужих BPMN файлов
+function guessKindFromBpmn(elType, eventDef) {
+    for (const [kind, m] of Object.entries(BPMN_MAP)) {
+        if (m.type === elType && (m.eventDef || null) === (eventDef || null)) return kind;
+    }
+    // без event-def — возьмём первое совпадение по типу
+    for (const [kind, m] of Object.entries(BPMN_MAP)) {
+        if (m.type === elType && !m.eventDef) return kind;
+    }
+    return 'task';
+}
+
+function xmlAttr(obj) {
+    let s = '';
+    for (const k in obj) {
+        if (obj[k] == null || obj[k] === '') continue;
+        s += ` ${k}="${escapeXml(obj[k])}"`;
+    }
+    return s;
+}
+
+function bpmnId(prefix, id) { return `${prefix}_${id}`; }
+
+function exportBpmnXml() {
+    const out = [];
+    out.push('<?xml version="1.0" encoding="UTF-8"?>');
+    out.push(`<bpmn:definitions xmlns:bpmn="${BPMN_NS}" xmlns:bpmndi="${BPMNDI_NS}" xmlns:dc="${DC_NS}" xmlns:di="${DI_NS}" xmlns:rossilber="${ROSS_NS}" id="Definitions_1" targetNamespace="${ROSS_NS}" exporter="BPMN Rossilber" exporterVersion="1.0">`);
+    out.push('  <bpmn:process id="Process_1" isExecutable="false">');
+
+    // индексы для sequenceFlow (incoming/outgoing)
+    const incoming = new Map(), outgoing = new Map();
+    for (const e of state.edges) {
+        if ((e.kind || 'sequence') !== 'sequence') continue;
+        if (!outgoing.has(e.source.id)) outgoing.set(e.source.id, []);
+        if (!incoming.has(e.target.id)) incoming.set(e.target.id, []);
+        outgoing.get(e.source.id).push(bpmnId('Flow', e.id));
+        incoming.get(e.target.id).push(bpmnId('Flow', e.id));
+    }
+
+    // flow nodes
+    for (const n of state.nodes) {
+        const m = BPMN_MAP[n.kind] || { type:'task' };
+        const elId = bpmnId('Node', n.id);
+        const attrs = { id: elId, name: n.text || '', ...(m.attrs || {}) };
+        out.push(`    <bpmn:${m.type}${xmlAttr(attrs)}>`);
+        // extensionElements with our meta
+        out.push('      <bpmn:extensionElements>');
+        const meta = {
+            kind: n.kind,
+            fill: n.fill, stroke: n.stroke, fontSize: n.fontSize,
+            level: n.level, critical: n.critical ? 'true' : '',
+            pi: n.pi, kpi: n.kpi, sop: n.sop, z: n.z,
+            dashed: n.dashed ? 'true' : '',
+        };
+        if (n.raci) {
+            meta['raci-r'] = n.raci.R || ''; meta['raci-a'] = n.raci.A || '';
+            meta['raci-c'] = n.raci.C || ''; meta['raci-i'] = n.raci.I || '';
+        }
+        out.push(`        <rossilber:meta${xmlAttr(meta)}/>`);
+        out.push('      </bpmn:extensionElements>');
+        for (const fid of incoming.get(n.id) || []) out.push(`      <bpmn:incoming>${fid}</bpmn:incoming>`);
+        for (const fid of outgoing.get(n.id) || []) out.push(`      <bpmn:outgoing>${fid}</bpmn:outgoing>`);
+        if (m.eventDef) out.push(`      <bpmn:${m.eventDef}/>`);
+        out.push(`    </bpmn:${m.type}>`);
+    }
+
+    // sequence / message / association flows
+    for (const e of state.edges) {
+        const kind = e.kind || 'sequence';
+        const fid = bpmnId('Flow', e.id);
+        const sRef = bpmnId('Node', e.source.id);
+        const tRef = bpmnId('Node', e.target.id);
+        const tag = kind === 'message' ? 'messageFlow'
+                  : kind === 'association' ? 'association'
+                  : 'sequenceFlow';
+        const attrs = { id: fid, sourceRef: sRef, targetRef: tRef, name: e.label || '' };
+        out.push(`    <bpmn:${tag}${xmlAttr(attrs)}>`);
+        out.push('      <bpmn:extensionElements>');
+        out.push(`        <rossilber:meta${xmlAttr({ kind, label:e.label||'', sourcePort:e.source.port||'', targetPort:e.target.port||'' })}/>`);
+        out.push('      </bpmn:extensionElements>');
+        out.push(`    </bpmn:${tag}>`);
+    }
+    out.push('  </bpmn:process>');
+
+    // BPMN DI (diagram interchange) — координаты и размеры
+    out.push('  <bpmndi:BPMNDiagram id="Diagram_1">');
+    out.push('    <bpmndi:BPMNPlane id="Plane_1" bpmnElement="Process_1">');
+    for (const n of state.nodes) {
+        const elId = bpmnId('Node', n.id);
+        out.push(`      <bpmndi:BPMNShape id="Shape_${n.id}" bpmnElement="${elId}">`);
+        out.push(`        <dc:Bounds${xmlAttr({ x:n.x, y:n.y, width:n.w, height:n.h })}/>`);
+        out.push('      </bpmndi:BPMNShape>');
+    }
+    for (const e of state.edges) {
+        const fid = bpmnId('Flow', e.id);
+        const s = state.nodes.find(n => n.id === e.source.id);
+        const t = state.nodes.find(n => n.id === e.target.id);
+        if (!s || !t) continue;
+        const waypoints = (e.waypoints && e.waypoints.length >= 2)
+            ? e.waypoints
+            : [ { x: s.x + s.w/2, y: s.y + s.h/2 }, { x: t.x + t.w/2, y: t.y + t.h/2 } ];
+        out.push(`      <bpmndi:BPMNEdge id="Edge_${e.id}" bpmnElement="${fid}">`);
+        for (const wp of waypoints) {
+            out.push(`        <di:waypoint${xmlAttr({ x:wp.x, y:wp.y })}/>`);
+        }
+        out.push('      </bpmndi:BPMNEdge>');
+    }
+    out.push('    </bpmndi:BPMNPlane>');
+    out.push('  </bpmndi:BPMNDiagram>');
+    out.push('</bpmn:definitions>');
+
+    const xml = out.join('\n');
+    if (hasElectron()) {
+        nativeSaveText('bpmn-rossilber-map.bpmn', xml,
+            [
+                { name:'BPMN 2.0',  extensions:['bpmn'] },
+                { name:'XML',       extensions:['xml'] },
+                { name:'Все файлы', extensions:['*'] },
+            ]);
+        return;
+    }
+    downloadFile(xml, 'bpmn-rossilber-map.bpmn', 'application/xml');
+    showToast('BPMN 2.0 экспортирован');
+}
+
+function importBpmnXml(text) {
+    const dom = new DOMParser().parseFromString(text, 'application/xml');
+    if (dom.querySelector('parsererror')) {
+        throw new Error('невалидный XML');
+    }
+    // узлы process (ищем любые process, поддержка collaboration)
+    const nodes = [];
+    const edges = [];
+    const boundsByRef = new Map();     // bpmnElement -> {x,y,w,h}
+    const waypointsByRef = new Map();  // bpmnElement -> [{x,y}]
+
+    // parse BPMNDI first
+    dom.querySelectorAll('BPMNShape, bpmndi\\:BPMNShape').forEach(sh => {
+        const ref = sh.getAttribute('bpmnElement');
+        const b = sh.querySelector('Bounds, dc\\:Bounds');
+        if (ref && b) {
+            boundsByRef.set(ref, {
+                x: +b.getAttribute('x') || 0,
+                y: +b.getAttribute('y') || 0,
+                w: +b.getAttribute('width') || 120,
+                h: +b.getAttribute('height') || 60,
+            });
+        }
+    });
+    dom.querySelectorAll('BPMNEdge, bpmndi\\:BPMNEdge').forEach(ed => {
+        const ref = ed.getAttribute('bpmnElement');
+        const wps = [...ed.querySelectorAll('waypoint, di\\:waypoint')].map(w => ({
+            x: +w.getAttribute('x') || 0,
+            y: +w.getAttribute('y') || 0,
+        }));
+        if (ref && wps.length) waypointsByRef.set(ref, wps);
+    });
+
+    // все flow-элементы process (кроме sequenceFlow/messageFlow/association)
+    const FLOW_TAGS = new Set(['sequenceFlow','messageFlow','association']);
+    const procContainers = dom.querySelectorAll('process, bpmn\\:process, subProcess, bpmn\\:subProcess');
+    const procEls = procContainers.length ? procContainers : [dom.documentElement];
+
+    const nodeIdMap = new Map(); // bpmnId -> our uid
+    procEls.forEach(proc => {
+        for (const child of Array.from(proc.children)) {
+            const tag = child.localName;
+            if (!tag || FLOW_TAGS.has(tag)) continue;
+            if (tag === 'extensionElements' || tag === 'laneSet') continue;
+            if (tag === 'incoming' || tag === 'outgoing') continue;
+
+            const bpmnIdAttr = child.getAttribute('id');
+            if (!bpmnIdAttr) continue;
+
+            // ищем rossilber:meta
+            const metaEl = child.querySelector('meta, rossilber\\:meta');
+            let kind = metaEl?.getAttribute('kind');
+            if (!kind) {
+                // derive от типа + event-def
+                const eventDefEl = [...child.children].find(c => c.localName && c.localName.endsWith('EventDefinition'));
+                const eventDef = eventDefEl?.localName;
+                kind = guessKindFromBpmn(tag, eventDef);
+            }
+            const def = SHAPES[kind];
+            if (!def) continue;
+
+            const b = boundsByRef.get(bpmnIdAttr);
+            const id = uid();
+            nodeIdMap.set(bpmnIdAttr, id);
+            const palette = def.defaults || {};
+            const fromMeta = (k, fallback) => {
+                const v = metaEl?.getAttribute(k);
+                return (v === null || v === undefined || v === '') ? fallback : v;
+            };
+            const n = {
+                id, kind,
+                x: b ? b.x : 40 + nodes.length*40,
+                y: b ? b.y : 40 + nodes.length*40,
+                w: b ? b.w : palette.w || 120,
+                h: b ? b.h : palette.h || 60,
+                text: child.getAttribute('name') || palette.text || '',
+                fill:  fromMeta('fill',   palette.fill   || '#ffffff'),
+                stroke:fromMeta('stroke', palette.stroke || '#111827'),
+                fontSize: +fromMeta('fontSize', palette.fontSize || 12),
+                level:    +fromMeta('level', 2) || 2,
+                critical: fromMeta('critical','') === 'true',
+                pi:  fromMeta('pi',''),
+                kpi: fromMeta('kpi',''),
+                sop: fromMeta('sop',''),
+                z:   +fromMeta('z', 0) || 0,
+                dashed: fromMeta('dashed','') === 'true',
+                raci: {
+                    R: fromMeta('raci-r',''),
+                    A: fromMeta('raci-a',''),
+                    C: fromMeta('raci-c',''),
+                    I: fromMeta('raci-i',''),
+                },
+            };
+            nodes.push(n);
+        }
+    });
+
+    // flows
+    procEls.forEach(proc => {
+        for (const child of Array.from(proc.children)) {
+            const tag = child.localName;
+            if (!FLOW_TAGS.has(tag)) continue;
+            const sRef = child.getAttribute('sourceRef');
+            const tRef = child.getAttribute('targetRef');
+            const sId = nodeIdMap.get(sRef);
+            const tId = nodeIdMap.get(tRef);
+            if (!sId || !tId) continue;
+            const metaEl = child.querySelector('meta, rossilber\\:meta');
+            const kind = (metaEl?.getAttribute('kind'))
+                       || (tag === 'messageFlow' ? 'message'
+                        :  tag === 'association' ? 'association' : 'sequence');
+            const label = child.getAttribute('name') || metaEl?.getAttribute('label') || '';
+            const wps = waypointsByRef.get(child.getAttribute('id')) || [];
+            edges.push({
+                id: uid(),
+                source:{ id: sId, port: metaEl?.getAttribute('sourcePort') || 'auto' },
+                target:{ id: tId, port: metaEl?.getAttribute('targetPort') || 'auto' },
+                kind, label,
+                waypoints: wps.length >= 2 ? wps : undefined,
+            });
+        }
+    });
+
+    return { nodes, edges };
 }
 
 /* ---------- clipboard ---------- */
