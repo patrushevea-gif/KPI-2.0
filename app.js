@@ -59,11 +59,97 @@ const state = {
      anchor(node, side): returns {x,y} of connection point
    }
 ----------------------------------------------*/
+/* ---------- tooltips (краткое описание артефакта при наведении) ---------- */
+const TOOLTIPS = {
+    // events
+    'event-start':        'Начало процесса — первый шаг.',
+    'event-intermediate': 'Событие в середине процесса.',
+    'event-end':          'Завершение процесса.',
+    'event-timer':        'Ожидание по времени или расписанию.',
+    'event-start-message':'Старт по получению сообщения.',
+    'event-int-message':  'Получение сообщения в процессе.',
+    'event-int-message-throw':'Отправка сообщения в процессе.',
+    'event-end-message':  'Завершение с отправкой сообщения.',
+    'event-boundary-message-int':   'Прерывает задачу при сообщении.',
+    'event-boundary-message-nonint':'Реагирует без прерывания задачи.',
+    'event-int-timer':    'Пауза процесса по таймеру.',
+    'event-boundary-timer-int':   'Прерывает задачу по таймауту.',
+    'event-boundary-timer-nonint':'Запуск параллельно по таймеру.',
+    'event-end-terminate':'Немедленное прекращение всего процесса.',
+    'event-int-error':    'Обработка известной ошибки.',
+    'event-boundary-error':'Перехват ошибки внутри задачи.',
+    'event-end-error':    'Завершение с ошибкой.',
+    'event-int-cancel':   'Отмена транзакции внутри процесса.',
+    'event-end-cancel':   'Завершение с отменой транзакции.',
+    'event-int-compensation':'Запуск компенсации выполненных действий.',
+    'event-end-compensation':'Завершение с компенсацией.',
+    'event-int-escalation':'Передача управления вверх по процессу.',
+    'event-end-escalation':'Завершение с эскалацией наверх.',
+    'event-start-condition':'Старт по выполнению условия.',
+    'event-int-condition':  'Срабатывает при выполнении условия.',
+    'event-boundary-condition-int':   'Прерывает задачу при условии.',
+    'event-boundary-condition-nonint':'Реагирует без прерывания.',
+    'event-int-link-catch':'Вход в звено цепочки процесса.',
+    'event-int-link-throw':'Переход в другую часть процесса.',
+    'event-start-signal':'Старт при получении сигнала.',
+    'event-int-signal':  'Приём/отправка широковещательного сигнала.',
+    'event-end-signal':  'Завершение с отправкой сигнала.',
+    'event-start-complex':'Старт при нескольких условиях.',
+    'event-int-complex':  'Комбинация нескольких событий.',
+    'event-end-complex':  'Завершение нескольких веток сразу.',
+    'event-start-parallel-multi':'Старт при всех событиях одновременно.',
+    'event-int-parallel-multi':  'Сработает только после всех событий.',
+
+    // tasks
+    'task':           'Обычная задача в процессе.',
+    'task-critical':  'Критичная задача — прямое влияние на результат.',
+    'task-manual':    'Выполняется человеком вручную.',
+    'task-auto':      'Выполняется системой автоматически.',
+    'task-external':  'Задача другого отдела или контрагента.',
+    'subprocess':     'Группа задач, разворачиваемая в отдельный процесс.',
+
+    // gateways
+    'gateway-x':          'Эксклюзивное «ИЛИ» — одна ветка из нескольких.',
+    'gateway-plus':       'Параллельное «И» — все ветки одновременно.',
+    'gateway-o':          'Включающее «ИЛИ» — одна или несколько веток.',
+    'gateway-event':      'Ветвление по первому наступившему событию.',
+    'gateway-event-instance':'XOR-события с созданием нового процесса.',
+    'gateway-parallel-event-instance':'Все события — один новый процесс.',
+    'gateway-complex':    'Сложное условие ветвления или слияния.',
+
+    // data & systems
+    'data-io':        'Общие входы или выходы процесса.',
+    'data-object':    'Документ, отчёт или информационный объект.',
+    'data-store':     'Система или база данных процесса.',
+    'data-external':  'Внешний контрагент или лицо.',
+    'pi':             'Индикатор эффективности задачи (PI).',
+    'kpi':            'Ключевой показатель эффективности (KPI).',
+    'sop':            'Методика или инструкция к задаче.',
+
+    // artifacts (Приложение Г)
+    'data-input':     'Исходные данные, входящие в задачу.',
+    'data-output':    'Результат выполнения задачи.',
+    'data-collection':'Пакет или набор однотипных объектов.',
+    'data-storage':   'Место хранения данных — БД, архив.',
+    'message-initiating':'Первое сообщение в цепочке взаимодействия.',
+    'message-response':  'Ответ на инициирующее сообщение.',
+
+    // swim
+    'pool':  'Пул — участник процесса или организация.',
+    'lane':  'Дорожка — роль, отдел или исполнитель.',
+    'group': 'Визуальная группировка связанных элементов.',
+
+    // annotations
+    'annotation':    'Текстовый комментарий к элементу.',
+    'level-header':  'Заголовок уровня карты процессов.',
+};
+
 const CATEGORIES = [
     { id:'events',     title:'События' },
     { id:'tasks',      title:'Задачи' },
     { id:'gateways',   title:'Шлюзы / Развилки' },
     { id:'data',       title:'Данные и системы' },
+    { id:'artifacts',  title:'Артефакты BPMN' },
     { id:'swim',       title:'Контейнеры' },
     { id:'annot',      title:'Аннотации' },
 ];
@@ -176,6 +262,180 @@ SHAPES['event-timer'] = {
         return g;
     },
 };
+
+/* ---- event helpers (Приложение А) ----
+   variant: 'start' | 'intermediate' | 'end' | 'boundary-int' | 'boundary-nonint'
+*/
+function eventBase(node, variant) {
+    const g = svgEl('g');
+    const cx = node.w/2, cy = node.h/2;
+    const rOuter = node.w/2;
+    if (variant === 'end') {
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':3}));
+    } else if (variant === 'intermediate' || variant === 'boundary-int') {
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':1.5}));
+        g.appendChild(svgEl('ellipse',{cx,cy,rx:rOuter-4,ry:node.h/2-4,
+            fill:'none',stroke:node.stroke,'stroke-width':1.4,'pointer-events':'none'}));
+    } else if (variant === 'boundary-nonint') {
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':1.5,'stroke-dasharray':'3 2'}));
+        g.appendChild(svgEl('ellipse',{cx,cy,rx:rOuter-4,ry:node.h/2-4,
+            fill:'none',stroke:node.stroke,'stroke-width':1.4,
+            'stroke-dasharray':'3 2','pointer-events':'none'}));
+    } else {
+        // start
+        g.appendChild(svgEl('ellipse',{class:'shape',cx,cy,rx:rOuter,ry:node.h/2,
+            fill:node.fill,stroke:node.stroke,'stroke-width':1.6}));
+    }
+    return g;
+}
+function eventIcon(node, trigger, filled) {
+    const cx = node.w/2, cy = node.h/2;
+    const color = filled ? '#ffffff' : node.stroke;
+    const bg = filled ? node.stroke : 'transparent';
+    const g = svgEl('g',{'pointer-events':'none'});
+    if (trigger === 'message') {
+        const w = 18, h = 12;
+        g.appendChild(svgEl('rect',{x:cx-w/2,y:cy-h/2,width:w,height:h,fill:bg,stroke:color,'stroke-width':1.3}));
+        g.appendChild(svgEl('polyline',{points:`${cx-w/2},${cy-h/2} ${cx},${cy+h/2-2} ${cx+w/2},${cy-h/2}`,
+            fill:'none',stroke:color,'stroke-width':1.3}));
+    } else if (trigger === 'timer') {
+        g.appendChild(svgEl('circle',{cx,cy,r:9,fill:bg,stroke:color,'stroke-width':1.3}));
+        g.appendChild(svgEl('line',{x1:cx,y1:cy,x2:cx,y2:cy-6,stroke:color,'stroke-width':1.3,'stroke-linecap':'round'}));
+        g.appendChild(svgEl('line',{x1:cx,y1:cy,x2:cx+5,y2:cy,stroke:color,'stroke-width':1.3,'stroke-linecap':'round'}));
+        // 12 ticks minimal
+        for (let i=0;i<12;i++){
+            const a = i*Math.PI/6;
+            const x1=cx+Math.cos(a)*9, y1=cy+Math.sin(a)*9;
+            const x2=cx+Math.cos(a)*7, y2=cy+Math.sin(a)*7;
+            g.appendChild(svgEl('line',{x1,y1,x2,y2,stroke:color,'stroke-width':1}));
+        }
+    } else if (trigger === 'error') {
+        // zig-zag lightning
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-8},${cy+6} ${cx-2},${cy-2} ${cx-5},${cy-2} ${cx+8},${cy-8} ${cx+2},${cy} ${cx+6},${cy} ${cx-4},${cy+8}`,
+            fill:bg, stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'cancel') {
+        g.appendChild(svgEl('path',{
+            d:`M ${cx-8} ${cy-8} L ${cx+8} ${cy+8} M ${cx+8} ${cy-8} L ${cx-8} ${cy+8}`,
+            stroke:color,'stroke-width':2.2,fill:'none','stroke-linecap':'round'}));
+    } else if (trigger === 'compensation') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-8},${cy} ${cx-2},${cy-6} ${cx-2},${cy+6}`,
+            fill:bg,stroke:color,'stroke-width':1.3}));
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-2},${cy} ${cx+6},${cy-6} ${cx+6},${cy+6}`,
+            fill:bg,stroke:color,'stroke-width':1.3}));
+    } else if (trigger === 'escalation') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx},${cy-9} ${cx+6},${cy+7} ${cx},${cy+2} ${cx-6},${cy+7}`,
+            fill:bg,stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'condition') {
+        const w=14,h=14;
+        g.appendChild(svgEl('rect',{x:cx-w/2,y:cy-h/2,width:w,height:h,fill:bg,stroke:color,'stroke-width':1.3}));
+        for (let i=0;i<3;i++){
+            const yy = cy - h/2 + 3 + i*4;
+            g.appendChild(svgEl('line',{x1:cx-w/2+2,y1:yy,x2:cx+w/2-2,y2:yy,stroke:color,'stroke-width':1.1}));
+        }
+    } else if (trigger === 'link') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx-8},${cy-4} ${cx+3},${cy-4} ${cx+3},${cy-8} ${cx+9},${cy} ${cx+3},${cy+8} ${cx+3},${cy+4} ${cx-8},${cy+4}`,
+            fill:bg,stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'signal') {
+        g.appendChild(svgEl('polygon',{
+            points:`${cx},${cy-8} ${cx+8},${cy+6} ${cx-8},${cy+6}`,
+            fill:bg,stroke:color,'stroke-width':1.3,'stroke-linejoin':'round'}));
+    } else if (trigger === 'terminate') {
+        g.appendChild(svgEl('circle',{cx,cy,r:9,fill:color}));
+    } else if (trigger === 'complex') {
+        // asterisk
+        const d = 8;
+        g.appendChild(svgEl('path',{
+            d:`M ${cx-d} ${cy} h ${2*d}
+               M ${cx} ${cy-d} v ${2*d}
+               M ${cx-d*0.7} ${cy-d*0.7} l ${d*1.4} ${d*1.4}
+               M ${cx+d*0.7} ${cy-d*0.7} l ${-d*1.4} ${d*1.4}`,
+            stroke:color,'stroke-width':1.7,'stroke-linecap':'round',fill:'none'}));
+    } else if (trigger === 'parallel-multiple') {
+        const d = 8;
+        g.appendChild(svgEl('path',{
+            d:`M ${cx-d} ${cy} h ${2*d} M ${cx} ${cy-d} v ${2*d}`,
+            stroke:color,'stroke-width':2.2,fill:'none','stroke-linecap':'round'}));
+    }
+    return g;
+}
+
+function addEvent(kind, label, trigger, variant, color, filledIcon) {
+    SHAPES[kind] = {
+        label, category:'events',
+        defaults:{ w:64, h:64, fill:'#ffffff', stroke:color, text:label, fontSize:11, strokeWidth:variant==='end'?3:variant==='start'?1.6:1.5 },
+        draw: n => {
+            const g = svgEl('g');
+            g.appendChild(eventBase(n, variant));
+            if (trigger) g.appendChild(eventIcon(n, trigger, filledIcon));
+            return g;
+        },
+    };
+}
+
+/* message events */
+addEvent('event-start-message', 'Старт · Сообщение', 'message', 'start', '#10b981', false);
+addEvent('event-int-message',   'Промеж. · Сообщение (получ.)', 'message', 'intermediate', '#f59e0b', false);
+addEvent('event-int-message-throw','Промеж. · Сообщение (отпр.)', 'message', 'intermediate', '#f59e0b', true);
+addEvent('event-end-message',   'Конец · Сообщение', 'message', 'end', '#ef4444', true);
+addEvent('event-boundary-message-int',    'Гран. прерыв. · Сообщение', 'message', 'boundary-int', '#f59e0b', false);
+addEvent('event-boundary-message-nonint', 'Гран. непрер. · Сообщение', 'message', 'boundary-nonint', '#f59e0b', false);
+
+/* timer events */
+addEvent('event-int-timer', 'Промеж. · Таймер', 'timer', 'intermediate', '#f59e0b', false);
+addEvent('event-boundary-timer-int',    'Гран. прерыв. · Таймер', 'timer', 'boundary-int', '#f59e0b', false);
+addEvent('event-boundary-timer-nonint', 'Гран. непрер. · Таймер', 'timer', 'boundary-nonint', '#f59e0b', false);
+
+/* terminate */
+addEvent('event-end-terminate', 'Конец · Терминальное', 'terminate', 'end', '#ef4444', false);
+
+/* error */
+addEvent('event-int-error', 'Промеж. · Ошибка (обраб.)', 'error', 'intermediate', '#f59e0b', false);
+addEvent('event-boundary-error', 'Гран. прерыв. · Ошибка', 'error', 'boundary-int', '#f59e0b', false);
+addEvent('event-end-error', 'Конец · Ошибка', 'error', 'end', '#ef4444', true);
+
+/* cancel */
+addEvent('event-int-cancel', 'Промеж. · Отмена', 'cancel', 'intermediate', '#f59e0b', false);
+addEvent('event-end-cancel', 'Конец · Отмена', 'cancel', 'end', '#ef4444', true);
+
+/* compensation */
+addEvent('event-int-compensation', 'Промеж. · Компенсация', 'compensation', 'intermediate', '#f59e0b', false);
+addEvent('event-end-compensation', 'Конец · Компенсация', 'compensation', 'end', '#ef4444', true);
+
+/* escalation */
+addEvent('event-int-escalation', 'Промеж. · Эскалация', 'escalation', 'intermediate', '#f59e0b', false);
+addEvent('event-end-escalation', 'Конец · Эскалация', 'escalation', 'end', '#ef4444', true);
+
+/* condition */
+addEvent('event-start-condition', 'Старт · Условие', 'condition', 'start', '#10b981', false);
+addEvent('event-int-condition',   'Промеж. · Условие', 'condition', 'intermediate', '#f59e0b', false);
+addEvent('event-boundary-condition-int',    'Гран. прерыв. · Условие', 'condition', 'boundary-int', '#f59e0b', false);
+addEvent('event-boundary-condition-nonint', 'Гран. непрер. · Условие', 'condition', 'boundary-nonint', '#f59e0b', false);
+
+/* link */
+addEvent('event-int-link-catch', 'Промеж. · Ссылка (вход)', 'link', 'intermediate', '#f59e0b', false);
+addEvent('event-int-link-throw', 'Промеж. · Ссылка (выход)', 'link', 'intermediate', '#f59e0b', true);
+
+/* signal */
+addEvent('event-start-signal', 'Старт · Сигнал', 'signal', 'start', '#10b981', false);
+addEvent('event-int-signal',   'Промеж. · Сигнал', 'signal', 'intermediate', '#f59e0b', false);
+addEvent('event-end-signal',   'Конец · Сигнал', 'signal', 'end', '#ef4444', true);
+
+/* complex (multiple) */
+addEvent('event-start-complex', 'Старт · Комплексное', 'complex', 'start', '#10b981', false);
+addEvent('event-int-complex',   'Промеж. · Комплексное', 'complex', 'intermediate', '#f59e0b', false);
+addEvent('event-end-complex',   'Конец · Комплексное', 'complex', 'end', '#ef4444', false);
+
+/* parallel multiple */
+addEvent('event-start-parallel-multi', 'Старт · Паралл. комплексное', 'parallel-multiple', 'start', '#10b981', false);
+addEvent('event-int-parallel-multi',   'Промеж. · Паралл. комплексное', 'parallel-multiple', 'intermediate', '#f59e0b', false);
 
 /* --- tasks --- */
 function taskBase(node, iconNode){
@@ -312,6 +572,56 @@ SHAPES['gateway-event'] = {
         return g;
     },
 };
+SHAPES['gateway-event-instance'] = {
+    label:'Событийный XOR (нов. экз.)', category:'gateways',
+    defaults:{ w:64, h:64, fill:'#fff7cc', stroke:'#b45309', text:'', fontSize:11, strokeWidth:2 },
+    draw: n => {
+        const g = svgEl('g');
+        g.appendChild(drawDiamond(n));
+        const cx = n.w/2, cy = n.h/2;
+        g.appendChild(svgEl('circle',{cx,cy,r:13,fill:'none',stroke:n.stroke,'stroke-width':1.4}));
+        g.appendChild(svgEl('circle',{cx,cy,r:10,fill:'none',stroke:n.stroke,'stroke-width':1.4}));
+        const pent = [];
+        for (let i=0;i<5;i++){
+            const a = -Math.PI/2 + i*2*Math.PI/5;
+            pent.push(`${cx + Math.cos(a)*6},${cy + Math.sin(a)*6}`);
+        }
+        g.appendChild(svgEl('polygon',{points:pent.join(' '),fill:'none',stroke:n.stroke,'stroke-width':1.3}));
+        return g;
+    },
+};
+SHAPES['gateway-parallel-event-instance'] = {
+    label:'Параллельный событийный AND (нов. экз.)', category:'gateways',
+    defaults:{ w:64, h:64, fill:'#fff7cc', stroke:'#b45309', text:'', fontSize:11, strokeWidth:2 },
+    draw: n => {
+        const g = svgEl('g');
+        g.appendChild(drawDiamond(n));
+        const cx = n.w/2, cy = n.h/2;
+        g.appendChild(svgEl('circle',{cx,cy,r:12,fill:'none',stroke:n.stroke,'stroke-width':1.4}));
+        const d = 7;
+        g.appendChild(iconPath(
+            `M ${cx-d} ${cy} h ${2*d} M ${cx} ${cy-d} v ${2*d}`,
+            n.stroke, 1.8));
+        return g;
+    },
+};
+SHAPES['gateway-complex'] = {
+    label:'Комплексный шлюз', category:'gateways',
+    defaults:{ w:64, h:64, fill:'#fff7cc', stroke:'#b45309', text:'', fontSize:11, strokeWidth:2 },
+    draw: n => {
+        const g = svgEl('g');
+        g.appendChild(drawDiamond(n));
+        const cx = n.w/2, cy = n.h/2, d = 11;
+        // star / asterisk — 3 crossing lines
+        g.appendChild(iconPath(
+            `M ${cx-d} ${cy} h ${2*d}
+             M ${cx} ${cy-d} v ${2*d}
+             M ${cx-d*0.7} ${cy-d*0.7} l ${d*1.4} ${d*1.4}
+             M ${cx+d*0.7} ${cy-d*0.7} l ${-d*1.4} ${d*1.4}`,
+            n.stroke, 2.4));
+        return g;
+    },
+};
 
 /* --- data / systems --- */
 SHAPES['data-io'] = {
@@ -345,9 +655,90 @@ SHAPES['kpi'] = {
     draw: n => drawRect(n, 22),
 };
 SHAPES['sop'] = {
-    label:'SOP / OPL', category:'data',
-    defaults:{ w:110, h:44, fill:'#fef3c7', stroke:'#b45309', text:'SOP', fontSize:12 },
+    label:'Методики / инструкции', category:'data',
+    defaults:{ w:150, h:44, fill:'#fef3c7', stroke:'#b45309', text:'Методика', fontSize:12 },
     draw: n => drawRect(n, 22),
+};
+
+/* --- artifacts (Приложение Г) --- */
+function drawDocIcon(node, options = {}) {
+    const w = node.w, h = node.h;
+    const fold = Math.min(14, w*0.22);
+    // folded corner in top-right
+    const d = `M 0 0 H ${w-fold} L ${w} ${fold} V ${h} H 0 Z`;
+    const g = svgEl('g');
+    g.appendChild(svgEl('path',{class:'shape',d,fill:node.fill,stroke:node.stroke,'stroke-width':1.4}));
+    g.appendChild(svgEl('path',{d:`M ${w-fold} 0 V ${fold} H ${w}`,fill:'none',stroke:node.stroke,'stroke-width':1.2,'pointer-events':'none'}));
+    if (options.arrow) {
+        // arrow icon inside top-left corner
+        const ax = 8, ay = 8, size = 12;
+        const filled = options.arrowFilled;
+        const aw = size, ah = size*0.75;
+        const arrowPath = `M ${ax} ${ay+ah/2} L ${ax+aw-4} ${ay+ah/2}
+                           M ${ax+aw-4} ${ay+2} L ${ax+aw} ${ay+ah/2} L ${ax+aw-4} ${ay+ah-2}`;
+        g.appendChild(svgEl('path',{d:arrowPath,fill:'none',stroke:node.stroke,'stroke-width':1.6,
+            'stroke-linecap':'round','stroke-linejoin':'round','pointer-events':'none'}));
+        if (filled) {
+            g.appendChild(svgEl('polygon',{
+                points:`${ax+aw-5},${ay+2} ${ax+aw},${ay+ah/2} ${ax+aw-5},${ay+ah-2}`,
+                fill:node.stroke,'pointer-events':'none'}));
+        }
+    }
+    if (options.collection) {
+        // three vertical bars at bottom
+        const barY1 = h - 12, barY2 = h - 4;
+        for (let i=0;i<3;i++){
+            const bx = w/2 - 10 + i*10;
+            g.appendChild(svgEl('line',{x1:bx,y1:barY1,x2:bx,y2:barY2,
+                stroke:node.stroke,'stroke-width':2,'pointer-events':'none'}));
+        }
+    }
+    return g;
+}
+
+SHAPES['data-input'] = {
+    label:'Входные данные', category:'artifacts',
+    defaults:{ w:96, h:110, fill:'#ffffff', stroke:'#6b7280', text:'Вход', fontSize:12 },
+    draw: n => drawDocIcon(n, { arrow:true, arrowFilled:false }),
+};
+SHAPES['data-output'] = {
+    label:'Выходные данные', category:'artifacts',
+    defaults:{ w:96, h:110, fill:'#ffffff', stroke:'#6b7280', text:'Выход', fontSize:12 },
+    draw: n => drawDocIcon(n, { arrow:true, arrowFilled:true }),
+};
+SHAPES['data-collection'] = {
+    label:'Коллекция данных', category:'artifacts',
+    defaults:{ w:96, h:110, fill:'#ffffff', stroke:'#6b7280', text:'Коллекция', fontSize:12 },
+    draw: n => drawDocIcon(n, { collection:true }),
+};
+SHAPES['data-storage'] = {
+    label:'Хранилище данных', category:'artifacts',
+    defaults:{ w:112, h:96, fill:'#eef2ff', stroke:'#4338ca', text:'Хранилище', fontSize:12 },
+    draw: drawCylinder,
+};
+
+function drawEnvelope(node, filled) {
+    const w = node.w, h = node.h;
+    const g = svgEl('g');
+    g.appendChild(svgEl('rect',{class:'shape',x:0,y:0,width:w,height:h,rx:2,ry:2,
+        fill: filled ? '#9aa3b2' : node.fill, stroke:node.stroke,'stroke-width':1.4}));
+    // flap
+    g.appendChild(svgEl('polyline',{
+        points: `0,0 ${w/2},${h*0.55} ${w},0`,
+        fill:'none', stroke: filled ? '#ffffff' : node.stroke, 'stroke-width':1.4,
+        'pointer-events':'none'
+    }));
+    return g;
+}
+SHAPES['message-initiating'] = {
+    label:'Инициирующее сообщение', category:'artifacts',
+    defaults:{ w:80, h:50, fill:'#ffffff', stroke:'#1f2937', text:'Сообщение', fontSize:11 },
+    draw: n => drawEnvelope(n, false),
+};
+SHAPES['message-response'] = {
+    label:'Ответное сообщение', category:'artifacts',
+    defaults:{ w:80, h:50, fill:'#9aa3b2', stroke:'#1f2937', text:'Ответ', fontSize:11, textColor:'#ffffff' },
+    draw: n => drawEnvelope(n, true),
 };
 
 /* --- swim / containers --- */
@@ -1404,9 +1795,12 @@ function buildPalette() {
             item.className = 'palette-item';
             item.dataset.kind = kind;
             item.draggable = true;
+            const tip = TOOLTIPS[kind] || def.label;
+            item.title = tip; // fallback native tooltip
             item.innerHTML = `
                 <svg viewBox="0 0 56 36" xmlns="${SVG_NS}">${paletteSvgFor(kind)}</svg>
                 <div class="pal-label">${def.label}</div>
+                <div class="pal-tip">${escapeXml(tip)}</div>
             `;
             grid.appendChild(item);
         }
@@ -1780,7 +2174,7 @@ function renderNodeProps(node, count) {
                 <div class="prop-field"><label>KPI</label><input type="text" data-prop="kpi" value="${escapeXml(node.kpi||'')}"/></div>
             </div>
             <div class="prop-row full">
-                <div class="prop-field"><label>SOP / OPL</label><input type="text" data-prop="sop" value="${escapeXml(node.sop||'')}"/></div>
+                <div class="prop-field"><label>Методика / инструкция</label><input type="text" data-prop="sop" value="${escapeXml(node.sop||'')}"/></div>
             </div>
         </div>
 
