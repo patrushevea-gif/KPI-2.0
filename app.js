@@ -548,9 +548,122 @@ function main() {
     toast           = $('#toast');
 
     applyCamera();
-    // palette, events, props — добавляются в следующих шагах
+    buildPalette();
+    initPaletteSearch();
+    initPaletteDrag();
+    renderAll();
     console.info('[BPMN Future] skeleton ready');
 }
+
+/* ---------- palette ---------- */
+function buildPalette() {
+    paletteEl.innerHTML = '';
+    for (const cat of CATEGORIES) {
+        const section = document.createElement('div');
+        section.className = 'palette-section';
+        section.innerHTML = `<h4>${cat.title}</h4><div class="palette-grid"></div>`;
+        const grid = section.querySelector('.palette-grid');
+        for (const kind in SHAPES) {
+            const def = SHAPES[kind];
+            if (def.category !== cat.id) continue;
+            const item = document.createElement('div');
+            item.className = 'palette-item';
+            item.dataset.kind = kind;
+            item.draggable = true;
+            item.innerHTML = `
+                <svg viewBox="0 0 56 36" xmlns="${SVG_NS}">${paletteSvgFor(kind)}</svg>
+                <div class="pal-label">${def.label}</div>
+            `;
+            grid.appendChild(item);
+        }
+        paletteEl.appendChild(section);
+    }
+}
+
+function paletteSvgFor(kind) {
+    // mini thumbnail
+    const def = SHAPES[kind];
+    const d = def.defaults;
+    const preview = {
+        ...d, w: 44, h: d.h > 60 ? 28 : Math.min(28, d.h*0.45), text: ''
+    };
+    if (kind === 'event-start' || kind === 'event-end' || kind === 'event-intermediate' || kind === 'event-timer' ||
+        kind === 'gateway-x' || kind === 'gateway-plus' || kind === 'gateway-o' || kind === 'gateway-event') {
+        preview.w = 28; preview.h = 28;
+    }
+    const tmpNode = { ...preview, text: '' };
+    const frag = def.draw(tmpNode);
+    const g = svgEl('g', { transform: `translate(${(56-preview.w)/2} ${(36-preview.h)/2})` });
+    g.appendChild(frag);
+    const ser = new XMLSerializer();
+    return ser.serializeToString(g);
+}
+
+function initPaletteSearch() {
+    const input = document.getElementById('paletteSearch');
+    if (!input) return;
+    input.addEventListener('input', () => {
+        const q = input.value.trim().toLowerCase();
+        $$('#paletteSections .palette-item').forEach(el => {
+            const txt = el.querySelector('.pal-label').textContent.toLowerCase();
+            el.style.display = !q || txt.includes(q) ? '' : 'none';
+        });
+    });
+}
+
+/* ---------- palette drag&drop ---------- */
+function initPaletteDrag() {
+    let pending = null;  // { kind, ghost }
+    paletteEl.addEventListener('dragstart', (e) => {
+        const item = e.target.closest('.palette-item');
+        if (!item) return;
+        pending = { kind: item.dataset.kind };
+        e.dataTransfer.effectAllowed = 'copy';
+        e.dataTransfer.setData('text/plain', item.dataset.kind);
+        // transparent drag image
+        const img = new Image();
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+        e.dataTransfer.setDragImage(img, 0, 0);
+    });
+
+    canvasHost.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+    });
+
+    canvasHost.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const kind = e.dataTransfer.getData('text/plain') || (pending && pending.kind);
+        if (!kind || !SHAPES[kind]) return;
+        const pt = clientToWorld(e.clientX, e.clientY);
+        const def = SHAPES[kind].defaults;
+        const x = snap(pt.x - def.w/2);
+        const y = snap(pt.y - def.h/2);
+        pushHistory();
+        const n = createNode(kind, x, y);
+        state.selection.nodes.clear();
+        state.selection.edges.clear();
+        state.selection.nodes.add(n.id);
+        renderAll();
+        renderProps();
+        pending = null;
+    });
+}
+
+/* ---------- coord helpers ---------- */
+function clientToWorld(cx, cy) {
+    const rect = svg.getBoundingClientRect();
+    const x = (cx - rect.left - state.camera.x) / state.camera.zoom;
+    const y = (cy - rect.top  - state.camera.y) / state.camera.zoom;
+    return { x, y };
+}
+function snap(v) { return state.snap ? Math.round(v/state.grid)*state.grid : v; }
+
+/* ---------- history stub ---------- */
+function pushHistory() { /* filled later */ }
+
+/* ---------- props stub ---------- */
+function renderProps() { /* filled later */ }
 
 /* ---------- camera ---------- */
 function applyCamera() {
