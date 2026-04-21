@@ -431,6 +431,7 @@ function renderAll() {
         if (g) { layerEdges.appendChild(g); els.edges.set(e.id, g); }
     }
     toggleEmptyHint();
+    __hooks.render.forEach(fn => { try { fn(); } catch {} });
 }
 
 function renderNode(n) {
@@ -765,10 +766,22 @@ function initMinimap() {
         mmFrame.style.height = fh + 'px';
     };
 
-    const origRender = renderAll;
-    window.renderAll = (...a) => { origRender(...a); update(); };
-    const origApply = applyCamera;
-    window.applyCamera = (...a) => { origApply(...a); update(); };
+    __hooks.render.push(update);
+    __hooks.camera.push(update);
+
+    // click minimap to jump camera
+    mm.style.pointerEvents = 'auto';
+    mm.style.cursor = 'crosshair';
+    mm.addEventListener('mousedown', (e) => {
+        const r = mm.getBoundingClientRect();
+        const vb = mmSvg.getAttribute('viewBox').split(' ').map(Number);
+        const wx = vb[0] + (e.clientX - r.left) / r.width  * vb[2];
+        const wy = vb[1] + (e.clientY - r.top)  / r.height * vb[3];
+        const rect = svg.getBoundingClientRect();
+        state.camera.x = rect.width/2  - wx * state.camera.zoom;
+        state.camera.y = rect.height/2 - wy * state.camera.zoom;
+        applyCamera();
+    });
 
     setTimeout(update, 50);
     window.addEventListener('resize', update);
@@ -1072,8 +1085,6 @@ function routeEdge(from, to, fromSide, toSide) {
     }
     return `M ${from.x} ${from.y} L ${from.x} ${my} L ${to.x} ${my} L ${to.x} ${to.y}`;
 }
-
-function redrawIncidentEdges(_nodeIds) { /* filled when edges added */ }
 
 /* ---------- zoom & pan ---------- */
 function initZoomAndPan() {
@@ -1876,10 +1887,12 @@ function renderEdgeProps(edge) {
 }
 
 /* ---------- camera ---------- */
+const __hooks = { render: [], camera: [] };
 function applyCamera() {
     const { x, y, zoom } = state.camera;
     viewport.setAttribute('transform', `translate(${x} ${y}) scale(${zoom})`);
     if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + '%';
+    __hooks.camera.forEach(fn => { try { fn(); } catch {} });
 }
 
 /* ---------- toast ---------- */
