@@ -1070,9 +1070,21 @@ function main() {
     initToolbar();
     initKeyboard();
     initMinimap();
+    initElectronBridge();
     renderAll();
     pushHistory();
     console.info('[BPMN Rossilber] ready');
+}
+
+/* ---------- Electron bridge: меню main-процесса → handleToolAction ---------- */
+function initElectronBridge() {
+    if (!hasElectron()) return;
+    if (typeof window.electronAPI.onMenuAction === 'function') {
+        window.electronAPI.onMenuAction((action) => {
+            try { handleToolAction(action); } catch (err) { console.error(err); }
+        });
+    }
+    document.documentElement.classList.add('is-electron');
 }
 
 /* ---------- context menu ---------- */
@@ -1636,7 +1648,17 @@ function handleToolAction(action) {
         case 'undo': undo(); break;
         case 'redo': redo(); break;
         case 'save': saveJson(); break;
-        case 'open': document.getElementById('fileInput').click(); break;
+        case 'open':
+            if (hasElectron()) {
+                window.electronAPI.openFile().then(r => {
+                    if (r && !r.canceled && r.content) {
+                        loadMapText(r.content, r.filePath || '');
+                    }
+                }).catch(err => alert('Ошибка открытия: ' + err.message));
+            } else {
+                document.getElementById('fileInput').click();
+            }
+            break;
         case 'export-svg': exportSvg(); break;
         case 'export-png': exportPng(); break;
         case 'export-bpmn': exportBpmnXml(); break;
@@ -1924,6 +1946,29 @@ function restoreFrom(s) {
 }
 
 /* ---------- export / import ---------- */
+const hasElectron = () => typeof window !== 'undefined' && !!window.electronAPI;
+
+async function nativeSaveText(defaultName, text, filters) {
+    try {
+        const r = await window.electronAPI.saveFile({ defaultName, data: text, filters });
+        if (!r.canceled) showToast('Сохранено: ' + r.filePath.split(/[\\/]/).pop());
+        return !r.canceled;
+    } catch (err) {
+        alert('Ошибка сохранения: ' + err.message);
+        return false;
+    }
+}
+async function nativeSaveBinary(defaultName, base64, filters) {
+    try {
+        const r = await window.electronAPI.saveBinaryFile({ defaultName, dataBase64: base64, filters });
+        if (!r.canceled) showToast('Сохранено: ' + r.filePath.split(/[\\/]/).pop());
+        return !r.canceled;
+    } catch (err) {
+        alert('Ошибка сохранения: ' + err.message);
+        return false;
+    }
+}
+
 function saveJson() {
     const data = {
         version: 1,
@@ -1931,36 +1976,41 @@ function saveJson() {
         nodes: state.nodes,
         edges: state.edges,
     };
-    downloadFile(JSON.stringify(data, null, 2),
-        'bpmn-rossilber-map.json', 'application/json');
+    const text = JSON.stringify(data, null, 2);
+    if (hasElectron()) {
+        nativeSaveText('bpmn-rossilber-map.json', text,
+            [{ name:'JSON', extensions:['json'] }, { name:'Все файлы', extensions:['*'] }]);
+        return;
+    }
+    downloadFile(text, 'bpmn-rossilber-map.json', 'application/json');
     showToast('JSON сохранён');
+}
+function loadMapText(text, nameHint) {
+    const name = (nameHint || '').toLowerCase();
+    const isBpmn = name.endsWith('.bpmn') || name.endsWith('.xml') || /^\s*<\?xml/.test(text);
+    try {
+        let data;
+        if (isBpmn) {
+            data = importBpmnXml(text);
+        } else {
+            data = JSON.parse(text);
+            if (!data.nodes) throw new Error('no nodes');
+        }
+        pushHistory();
+        state.nodes = data.nodes;
+        state.edges = data.edges || [];
+        state.selection.nodes.clear();
+        state.selection.edges.clear();
+        renderAll();
+        renderProps();
+        showToast(isBpmn ? 'BPMN карта загружена' : 'Карта загружена');
+    } catch(err) {
+        alert('Не удалось разобрать файл: ' + err.message);
+    }
 }
 function loadJsonFile(file) {
     const rd = new FileReader();
-    const name = (file.name || '').toLowerCase();
-    const isBpmn = name.endsWith('.bpmn') || name.endsWith('.xml');
-    rd.onload = () => {
-        try {
-            const text = rd.result;
-            let data;
-            if (isBpmn || /^\s*<\?xml/.test(text)) {
-                data = importBpmnXml(text);
-            } else {
-                data = JSON.parse(text);
-                if (!data.nodes) throw new Error('no nodes');
-            }
-            pushHistory();
-            state.nodes = data.nodes;
-            state.edges = data.edges || [];
-            state.selection.nodes.clear();
-            state.selection.edges.clear();
-            renderAll();
-            renderProps();
-            showToast(isBpmn ? 'BPMN карта загружена' : 'Карта загружена');
-        } catch(err) {
-            alert('Не удалось разобрать файл: ' + err.message);
-        }
-    };
+    rd.onload = () => loadMapText(rd.result, file.name || '');
     rd.readAsText(file);
 }
 
@@ -1978,8 +2028,13 @@ function exportSvg() {
     const vp = clone.querySelector('#viewport');
     vp.removeAttribute('transform');
     const ser = new XMLSerializer().serializeToString(clone);
-    downloadFile('<?xml version="1.0" encoding="UTF-8"?>\n' + ser,
-        'bpmn-rossilber-map.svg', 'image/svg+xml');
+    const xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + ser;
+    if (hasElectron()) {
+        nativeSaveText('bpmn-rossilber-map.svg', xml,
+            [{ name:'SVG', extensions:['svg'] }, { name:'Все файлы', extensions:['*'] }]);
+        return;
+    }
+    downloadFile(xml, 'bpmn-rossilber-map.svg', 'image/svg+xml');
     showToast('SVG экспортирован');
 }
 
@@ -2008,7 +2063,18 @@ function exportPng() {
         ctx.fillRect(0,0,canvas.width,canvas.height);
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         URL.revokeObjectURL(url);
-        canvas.toBlob((b) => {
+        canvas.toBlob(async (b) => {
+            if (hasElectron()) {
+                // read blob as base64 and pass through IPC
+                const fr = new FileReader();
+                fr.onload = () => {
+                    const base64 = String(fr.result).split(',')[1];
+                    nativeSaveBinary('bpmn-rossilber-map.png', base64,
+                        [{ name:'PNG', extensions:['png'] }, { name:'Все файлы', extensions:['*'] }]);
+                };
+                fr.readAsDataURL(b);
+                return;
+            }
             const a = document.createElement('a');
             a.href = URL.createObjectURL(b);
             a.download = 'bpmn-rossilber-map.png';
@@ -2244,7 +2310,17 @@ function exportBpmnXml() {
     out.push('  </bpmndi:BPMNDiagram>');
     out.push('</bpmn:definitions>');
 
-    downloadFile(out.join('\n'), 'bpmn-rossilber-map.bpmn', 'application/xml');
+    const xml = out.join('\n');
+    if (hasElectron()) {
+        nativeSaveText('bpmn-rossilber-map.bpmn', xml,
+            [
+                { name:'BPMN 2.0',  extensions:['bpmn'] },
+                { name:'XML',       extensions:['xml'] },
+                { name:'Все файлы', extensions:['*'] },
+            ]);
+        return;
+    }
+    downloadFile(xml, 'bpmn-rossilber-map.bpmn', 'application/xml');
     showToast('BPMN 2.0 экспортирован');
 }
 

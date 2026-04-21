@@ -1,0 +1,12 @@
+# deps / build output
+node_modules/
+desktop/node_modules/
+desktop/dist/
+desktop/out/
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.log
+*.tmp

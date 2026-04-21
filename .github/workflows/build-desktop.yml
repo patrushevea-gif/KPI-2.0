@@ -1,0 +1,64 @@
+name: Build Desktop (Windows)
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build Windows installer + portable
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist
+
+      - name: List build artifacts
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path desktop\dist -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.yml', '.blockmap' } |
+            ForEach-Object { "{0,10}  {1}" -f $_.Length, $_.FullName }
+
+      - name: Upload artifacts (workflow run)
+        uses: actions/upload-artifact@v4
+        with:
+          name: bpmn-rossilber-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/*.yml
+          if-no-files-found: error
+
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            desktop/dist/*.exe
+            desktop/dist/latest.yml

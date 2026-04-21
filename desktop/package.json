@@ -1,0 +1,70 @@
+{
+  "name": "bpmn-rossilber-desktop",
+  "version": "1.0.0",
+  "description": "BPMN Rossilber — десктопная версия (Electron-обёртка над браузерным редактором)",
+  "private": true,
+  "main": "main.js",
+  "author": "Rossilber",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64",
+    "portable": "electron-builder --win portable --x64",
+    "dist": "electron-builder --win nsis portable --x64"
+  },
+  "devDependencies": {
+    "electron": "^32.2.6",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.rossilber.bpmn-rossilber",
+    "productName": "BPMN Rossilber",
+    "copyright": "Copyright © 2026 Rossilber",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "menu.js",
+      "!dist/**",
+      "!node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "app",
+        "filter": [
+          "index.html",
+          "styles.css",
+          "app.js",
+          "examples/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "BPMN-Rossilber-${version}-${arch}-${ext}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "BPMN Rossilber",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "uninstallDisplayName": "BPMN Rossilber",
+      "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "BPMN-Rossilber-${version}-portable.exe"
+    }
+  }
+}
