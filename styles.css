@@ -217,7 +217,6 @@ body {
     gap: 6px;
 }
 .palette-item {
-    position: relative;
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 8px 8px 6px;
@@ -230,41 +229,6 @@ body {
     text-align: center;
     transition: transform .08s, border-color .12s, background .12s;
 }
-.palette-item .pal-tip {
-    position: absolute;
-    left: calc(100% + 10px);
-    top: 50%;
-    transform: translateY(-50%) translateX(-4px);
-    background: #1d2a48;
-    color: #fff;
-    font-size: 11.5px;
-    line-height: 1.35;
-    padding: 7px 10px;
-    border-radius: 6px;
-    width: 200px;
-    box-shadow: 0 6px 18px rgba(17,24,39,.22);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity .15s, transform .15s;
-    z-index: 60;
-    white-space: normal;
-    text-align: left;
-}
-.palette-item .pal-tip::before {
-    content: '';
-    position: absolute;
-    left: -5px;
-    top: 50%;
-    transform: translateY(-50%) rotate(45deg);
-    width: 10px; height: 10px;
-    background: #1d2a48;
-}
-.palette-item:hover .pal-tip {
-    opacity: 1;
-    transform: translateY(-50%) translateX(0);
-    transition-delay: .25s;
-}
-.palette-item:active .pal-tip { opacity: 0; transition-delay: 0s; }
 .palette-item:hover { background: #fff; border-color: #c6cee0; transform: translateY(-1px); box-shadow: 0 1px 3px rgba(17,24,39,.07); }
 .palette-item:active { cursor: grabbing; }
 .palette-item svg { width: 48px; height: 36px; }
