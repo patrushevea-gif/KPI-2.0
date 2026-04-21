@@ -551,8 +551,326 @@ function main() {
     buildPalette();
     initPaletteSearch();
     initPaletteDrag();
+    initCanvasInteraction();
+    initZoomAndPan();
+    initToolbar();
+    initKeyboard();
     renderAll();
     console.info('[BPMN Future] skeleton ready');
+}
+
+/* ---------- canvas interaction: select + move + marquee ---------- */
+function initCanvasInteraction() {
+    let dragMode = null; // 'move' | 'marquee' | null
+    let startWorld = null;
+    let startPositions = new Map();
+    let marqueeEl = null;
+
+    svg.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        // space for pan handled in zoom/pan module
+        if (svg.classList.contains('panning')) return;
+
+        const nodeEl = e.target.closest('[data-id]');
+        const pt = clientToWorld(e.clientX, e.clientY);
+
+        if (nodeEl) {
+            const id = nodeEl.dataset.id;
+            // if clicking a node that's not selected — select it (respect shift)
+            if (!state.selection.nodes.has(id) && !state.selection.edges.has(id)) {
+                if (!e.shiftKey) {
+                    state.selection.nodes.clear();
+                    state.selection.edges.clear();
+                }
+                if (state.nodes.find(n=>n.id===id)) state.selection.nodes.add(id);
+                else state.selection.edges.add(id);
+                syncSelectionDom();
+                renderProps();
+            } else if (e.shiftKey) {
+                state.selection.nodes.delete(id);
+                state.selection.edges.delete(id);
+                syncSelectionDom();
+                renderProps();
+                return;
+            }
+
+            dragMode = 'move';
+            startWorld = pt;
+            startPositions.clear();
+            pushHistory();
+            for (const nid of state.selection.nodes) {
+                const n = state.nodes.find(x => x.id === nid);
+                if (n) startPositions.set(nid, { x:n.x, y:n.y });
+            }
+        } else {
+            // clicked empty canvas — clear + marquee
+            if (!e.shiftKey) {
+                state.selection.nodes.clear();
+                state.selection.edges.clear();
+                syncSelectionDom();
+                renderProps();
+            }
+            dragMode = 'marquee';
+            startWorld = pt;
+            marqueeEl = svgEl('rect', { class:'marquee', x:pt.x, y:pt.y, width:0, height:0 });
+            layerOverlay.appendChild(marqueeEl);
+        }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!dragMode) return;
+        const pt = clientToWorld(e.clientX, e.clientY);
+        if (dragMode === 'move') {
+            const dx = pt.x - startWorld.x;
+            const dy = pt.y - startWorld.y;
+            for (const [id, pos] of startPositions) {
+                const n = state.nodes.find(x => x.id === id);
+                if (!n) continue;
+                n.x = snap(pos.x + dx);
+                n.y = snap(pos.y + dy);
+                const g = els.nodes.get(id);
+                if (g) g.setAttribute('transform', `translate(${n.x} ${n.y})`);
+            }
+            redrawIncidentEdges([...startPositions.keys()]);
+        } else if (dragMode === 'marquee') {
+            const x = Math.min(pt.x, startWorld.x);
+            const y = Math.min(pt.y, startWorld.y);
+            const w = Math.abs(pt.x - startWorld.x);
+            const h = Math.abs(pt.y - startWorld.y);
+            marqueeEl.setAttribute('x', x);
+            marqueeEl.setAttribute('y', y);
+            marqueeEl.setAttribute('width', w);
+            marqueeEl.setAttribute('height', h);
+        }
+    });
+
+    window.addEventListener('mouseup', () => {
+        if (dragMode === 'marquee' && marqueeEl) {
+            const x = +marqueeEl.getAttribute('x');
+            const y = +marqueeEl.getAttribute('y');
+            const w = +marqueeEl.getAttribute('width');
+            const h = +marqueeEl.getAttribute('height');
+            if (w > 3 && h > 3) {
+                for (const n of state.nodes) {
+                    if (n.x >= x && n.y >= y && n.x+n.w <= x+w && n.y+n.h <= y+h) {
+                        state.selection.nodes.add(n.id);
+                    }
+                }
+                syncSelectionDom();
+                renderProps();
+            }
+            marqueeEl.remove();
+            marqueeEl = null;
+        }
+        dragMode = null;
+        startPositions.clear();
+    });
+}
+
+function syncSelectionDom() {
+    for (const [id, g] of els.nodes) {
+        g.classList.toggle('selected', state.selection.nodes.has(id));
+    }
+    for (const [id, g] of els.edges) {
+        g.classList.toggle('selected', state.selection.edges.has(id));
+    }
+}
+
+function redrawIncidentEdges(_nodeIds) { /* filled when edges added */ }
+
+/* ---------- zoom & pan ---------- */
+function initZoomAndPan() {
+    // wheel zoom
+    svg.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.0015;
+        const factor = Math.exp(delta);
+        zoomAt(e.clientX, e.clientY, factor);
+    }, { passive:false });
+
+    // space + drag OR middle-mouse pan
+    let panning = false, panStart = null, cameraStart = null;
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space' && !isEditingText()) {
+            svg.classList.add('panning');
+        }
+    });
+    window.addEventListener('keyup', (e) => {
+        if (e.code === 'Space') svg.classList.remove('panning','panning-active');
+    });
+    svg.addEventListener('mousedown', (e) => {
+        if (e.button === 1 || (e.button === 0 && svg.classList.contains('panning'))) {
+            e.preventDefault();
+            panning = true;
+            panStart = { x:e.clientX, y:e.clientY };
+            cameraStart = { x:state.camera.x, y:state.camera.y };
+            svg.classList.add('panning-active');
+        }
+    });
+    window.addEventListener('mousemove', (e) => {
+        if (!panning) return;
+        state.camera.x = cameraStart.x + (e.clientX - panStart.x);
+        state.camera.y = cameraStart.y + (e.clientY - panStart.y);
+        applyCamera();
+    });
+    window.addEventListener('mouseup', () => {
+        panning = false;
+        svg.classList.remove('panning-active');
+    });
+}
+
+function zoomAt(cx, cy, factor) {
+    const rect = svg.getBoundingClientRect();
+    const localX = cx - rect.left;
+    const localY = cy - rect.top;
+    const worldX = (localX - state.camera.x) / state.camera.zoom;
+    const worldY = (localY - state.camera.y) / state.camera.zoom;
+    state.camera.zoom = clamp(state.camera.zoom * factor, 0.2, 4);
+    state.camera.x = localX - worldX * state.camera.zoom;
+    state.camera.y = localY - worldY * state.camera.zoom;
+    applyCamera();
+}
+
+function isEditingText() {
+    const ae = document.activeElement;
+    return ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+}
+
+/* ---------- toolbar & keyboard stubs (filled later) ---------- */
+function initToolbar() {
+    document.querySelectorAll('.tool-btn').forEach(btn => {
+        const action = btn.dataset.action;
+        if (!action) return;
+        btn.addEventListener('click', () => handleToolAction(action));
+    });
+    document.getElementById('toggleGrid').addEventListener('change', e => {
+        state.showGrid = e.target.checked;
+        $('#gridRect').style.display = state.showGrid ? '' : 'none';
+    });
+    document.getElementById('toggleSnap').addEventListener('change', e => {
+        state.snap = e.target.checked;
+    });
+    document.getElementById('toggleOrtho').addEventListener('change', e => {
+        state.ortho = e.target.checked;
+        renderAll();
+    });
+    document.querySelectorAll('.level-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.level-btn').forEach(b=>b.classList.remove('active'));
+            btn.classList.add('active');
+            state.currentLevel = +btn.dataset.level;
+        });
+    });
+}
+
+function handleToolAction(action) {
+    switch(action) {
+        case 'zoom-in':  zoomAt(innerWidth/2, innerHeight/2, 1.2); break;
+        case 'zoom-out': zoomAt(innerWidth/2, innerHeight/2, 1/1.2); break;
+        case 'zoom-reset':
+            state.camera.zoom = 1;
+            applyCamera(); break;
+        case 'fit': fitToContent(); break;
+        case 'delete': deleteSelection(); break;
+        case 'duplicate': duplicateSelection(); break;
+        case 'front':
+        case 'back':
+            for (const id of state.selection.nodes) {
+                const n = state.nodes.find(x=>x.id===id);
+                if (n) n.z = (action === 'front' ? 100 : -100);
+            }
+            renderAll(); break;
+        case 'help': document.getElementById('helpModal').classList.add('open'); break;
+        case 'new': newMap(); break;
+        default: /* other actions later */ break;
+    }
+}
+
+function initKeyboard() {
+    window.addEventListener('keydown', (e) => {
+        if (isEditingText()) return;
+        const meta = e.ctrlKey || e.metaKey;
+        if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(); e.preventDefault(); }
+        else if (meta && e.key.toLowerCase() === 'd') { duplicateSelection(); e.preventDefault(); }
+        else if (e.key === '+' || e.key === '=') zoomAt(innerWidth/2, innerHeight/2, 1.15);
+        else if (e.key === '-') zoomAt(innerWidth/2, innerHeight/2, 1/1.15);
+        else if (e.key === '0') { state.camera.zoom = 1; applyCamera(); }
+        else if (['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)) {
+            const step = e.shiftKey ? 10 : 1;
+            const dx = e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0;
+            const dy = e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0;
+            for (const id of state.selection.nodes) {
+                const n = state.nodes.find(x=>x.id===id);
+                if (n){ n.x += dx; n.y += dy; }
+            }
+            renderAll();
+            e.preventDefault();
+        }
+    });
+
+    document.querySelectorAll('[data-close]').forEach(b =>
+        b.addEventListener('click', () => b.closest('.modal')?.classList.remove('open')));
+    document.querySelectorAll('.modal').forEach(m =>
+        m.addEventListener('click', (e) => { if (e.target === m) m.classList.remove('open'); }));
+}
+
+function deleteSelection() {
+    if (state.selection.nodes.size === 0 && state.selection.edges.size === 0) return;
+    pushHistory();
+    const remNodes = new Set(state.selection.nodes);
+    state.nodes = state.nodes.filter(n => !remNodes.has(n.id));
+    state.edges = state.edges.filter(e =>
+        !state.selection.edges.has(e.id) &&
+        !remNodes.has(e.source.id) && !remNodes.has(e.target.id));
+    state.selection.nodes.clear();
+    state.selection.edges.clear();
+    renderAll();
+    renderProps();
+}
+
+function duplicateSelection() {
+    if (state.selection.nodes.size === 0) return;
+    pushHistory();
+    const newIds = [];
+    for (const id of state.selection.nodes) {
+        const n = state.nodes.find(x=>x.id===id);
+        if (!n) continue;
+        const copy = { ...n, id:uid(), x:n.x+20, y:n.y+20, raci: n.raci };
+        state.nodes.push(copy);
+        newIds.push(copy.id);
+    }
+    state.selection.nodes.clear();
+    newIds.forEach(id => state.selection.nodes.add(id));
+    renderAll();
+    renderProps();
+}
+
+function fitToContent() {
+    if (state.nodes.length === 0) return;
+    const pad = 40;
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+    for (const n of state.nodes) {
+        minX = Math.min(minX, n.x); minY = Math.min(minY, n.y);
+        maxX = Math.max(maxX, n.x+n.w); maxY = Math.max(maxY, n.y+n.h);
+    }
+    const rect = svg.getBoundingClientRect();
+    const w = maxX - minX + pad*2;
+    const h = maxY - minY + pad*2;
+    const z = Math.min(rect.width / w, rect.height / h, 1.8);
+    state.camera.zoom = z;
+    state.camera.x = -minX*z + pad*z + (rect.width - (maxX-minX)*z)/2 - pad*z;
+    state.camera.y = -minY*z + pad*z + (rect.height - (maxY-minY)*z)/2 - pad*z;
+    applyCamera();
+}
+
+function newMap() {
+    if (state.nodes.length && !confirm('Создать новую карту? Текущая будет стёрта.')) return;
+    state.nodes = []; state.edges = [];
+    state.selection.nodes.clear(); state.selection.edges.clear();
+    state.camera = { x:0, y:0, zoom:1 };
+    applyCamera();
+    renderAll();
+    renderProps();
 }
 
 /* ---------- palette ---------- */
