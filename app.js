@@ -64,6 +64,7 @@ const CATEGORIES = [
     { id:'tasks',      title:'Задачи' },
     { id:'gateways',   title:'Шлюзы / Развилки' },
     { id:'data',       title:'Данные и системы' },
+    { id:'artifacts',  title:'Артефакты BPMN' },
     { id:'swim',       title:'Контейнеры' },
     { id:'annot',      title:'Аннотации' },
 ];
@@ -398,6 +399,87 @@ SHAPES['sop'] = {
     label:'SOP / OPL', category:'data',
     defaults:{ w:110, h:44, fill:'#fef3c7', stroke:'#b45309', text:'SOP', fontSize:12 },
     draw: n => drawRect(n, 22),
+};
+
+/* --- artifacts (Приложение Г) --- */
+function drawDocIcon(node, options = {}) {
+    const w = node.w, h = node.h;
+    const fold = Math.min(14, w*0.22);
+    // folded corner in top-right
+    const d = `M 0 0 H ${w-fold} L ${w} ${fold} V ${h} H 0 Z`;
+    const g = svgEl('g');
+    g.appendChild(svgEl('path',{class:'shape',d,fill:node.fill,stroke:node.stroke,'stroke-width':1.4}));
+    g.appendChild(svgEl('path',{d:`M ${w-fold} 0 V ${fold} H ${w}`,fill:'none',stroke:node.stroke,'stroke-width':1.2,'pointer-events':'none'}));
+    if (options.arrow) {
+        // arrow icon inside top-left corner
+        const ax = 8, ay = 8, size = 12;
+        const filled = options.arrowFilled;
+        const aw = size, ah = size*0.75;
+        const arrowPath = `M ${ax} ${ay+ah/2} L ${ax+aw-4} ${ay+ah/2}
+                           M ${ax+aw-4} ${ay+2} L ${ax+aw} ${ay+ah/2} L ${ax+aw-4} ${ay+ah-2}`;
+        g.appendChild(svgEl('path',{d:arrowPath,fill:'none',stroke:node.stroke,'stroke-width':1.6,
+            'stroke-linecap':'round','stroke-linejoin':'round','pointer-events':'none'}));
+        if (filled) {
+            g.appendChild(svgEl('polygon',{
+                points:`${ax+aw-5},${ay+2} ${ax+aw},${ay+ah/2} ${ax+aw-5},${ay+ah-2}`,
+                fill:node.stroke,'pointer-events':'none'}));
+        }
+    }
+    if (options.collection) {
+        // three vertical bars at bottom
+        const barY1 = h - 12, barY2 = h - 4;
+        for (let i=0;i<3;i++){
+            const bx = w/2 - 10 + i*10;
+            g.appendChild(svgEl('line',{x1:bx,y1:barY1,x2:bx,y2:barY2,
+                stroke:node.stroke,'stroke-width':2,'pointer-events':'none'}));
+        }
+    }
+    return g;
+}
+
+SHAPES['data-input'] = {
+    label:'Входные данные', category:'artifacts',
+    defaults:{ w:96, h:110, fill:'#ffffff', stroke:'#6b7280', text:'Вход', fontSize:12 },
+    draw: n => drawDocIcon(n, { arrow:true, arrowFilled:false }),
+};
+SHAPES['data-output'] = {
+    label:'Выходные данные', category:'artifacts',
+    defaults:{ w:96, h:110, fill:'#ffffff', stroke:'#6b7280', text:'Выход', fontSize:12 },
+    draw: n => drawDocIcon(n, { arrow:true, arrowFilled:true }),
+};
+SHAPES['data-collection'] = {
+    label:'Коллекция данных', category:'artifacts',
+    defaults:{ w:96, h:110, fill:'#ffffff', stroke:'#6b7280', text:'Коллекция', fontSize:12 },
+    draw: n => drawDocIcon(n, { collection:true }),
+};
+SHAPES['data-storage'] = {
+    label:'Хранилище данных', category:'artifacts',
+    defaults:{ w:112, h:96, fill:'#eef2ff', stroke:'#4338ca', text:'Хранилище', fontSize:12 },
+    draw: drawCylinder,
+};
+
+function drawEnvelope(node, filled) {
+    const w = node.w, h = node.h;
+    const g = svgEl('g');
+    g.appendChild(svgEl('rect',{class:'shape',x:0,y:0,width:w,height:h,rx:2,ry:2,
+        fill: filled ? '#9aa3b2' : node.fill, stroke:node.stroke,'stroke-width':1.4}));
+    // flap
+    g.appendChild(svgEl('polyline',{
+        points: `0,0 ${w/2},${h*0.55} ${w},0`,
+        fill:'none', stroke: filled ? '#ffffff' : node.stroke, 'stroke-width':1.4,
+        'pointer-events':'none'
+    }));
+    return g;
+}
+SHAPES['message-initiating'] = {
+    label:'Инициирующее сообщение', category:'artifacts',
+    defaults:{ w:80, h:50, fill:'#ffffff', stroke:'#1f2937', text:'Сообщение', fontSize:11 },
+    draw: n => drawEnvelope(n, false),
+};
+SHAPES['message-response'] = {
+    label:'Ответное сообщение', category:'artifacts',
+    defaults:{ w:80, h:50, fill:'#9aa3b2', stroke:'#1f2937', text:'Ответ', fontSize:11, textColor:'#ffffff' },
+    draw: n => drawEnvelope(n, true),
 };
 
 /* --- swim / containers --- */
