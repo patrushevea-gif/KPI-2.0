@@ -674,10 +674,117 @@ function main() {
     initCanvasInteraction();
     initZoomAndPan();
     initInlineEditor();
+    initContextMenu();
     initToolbar();
     initKeyboard();
+    initMinimap();
     renderAll();
-    console.info('[BPMN Future] skeleton ready');
+    pushHistory();
+    console.info('[BPMN Future] ready');
+}
+
+/* ---------- context menu ---------- */
+function initContextMenu() {
+    svg.addEventListener('contextmenu', (e) => {
+        const nodeEl = e.target.closest('[data-id]');
+        if (!nodeEl) return;
+        e.preventDefault();
+        const id = nodeEl.dataset.id;
+        if (!state.selection.nodes.has(id) && !state.selection.edges.has(id)) {
+            state.selection.nodes.clear();
+            state.selection.edges.clear();
+            if (state.nodes.find(n=>n.id===id)) state.selection.nodes.add(id);
+            else state.selection.edges.add(id);
+            syncSelectionDom();
+            renderProps();
+        }
+        ctxMenu.hidden = false;
+        ctxMenu.style.left = e.clientX + 'px';
+        ctxMenu.style.top  = e.clientY + 'px';
+    });
+    document.addEventListener('mousedown', (e) => {
+        if (!ctxMenu.contains(e.target)) ctxMenu.hidden = true;
+    });
+    ctxMenu.addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-cmd]');
+        if (!b) return;
+        const cmd = b.dataset.cmd;
+        ctxMenu.hidden = true;
+        if (cmd === 'delete') deleteSelection();
+        else if (cmd === 'duplicate') duplicateSelection();
+        else if (cmd === 'front') handleToolAction('front');
+        else if (cmd === 'back') handleToolAction('back');
+        else if (cmd === 'edit') {
+            const id = [...state.selection.nodes][0];
+            const n = state.nodes.find(x=>x.id===id);
+            if (n) openTextEditor(n);
+        }
+    });
+}
+
+/* ---------- minimap ---------- */
+function initMinimap() {
+    const mm = document.getElementById('minimap');
+    const mmSvg = document.getElementById('minimapSvg');
+    const mmFrame = document.getElementById('minimapFrame');
+    if (!mm || !mmSvg) return;
+
+    const update = () => {
+        const bbox = bboxOfContent();
+        const pad = 40;
+        const vb = {
+            x: bbox.x - pad, y: bbox.y - pad,
+            w: bbox.w + pad*2, h: bbox.h + pad*2,
+        };
+        mmSvg.setAttribute('viewBox', `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+        // render thumbnails
+        mmSvg.innerHTML = '';
+        for (const n of state.nodes) {
+            mmSvg.appendChild(svgEl('rect', {
+                x:n.x, y:n.y, width:n.w, height:n.h,
+                fill: n.fill === 'transparent' ? 'transparent' : (n.fill || '#ffffff'),
+                stroke: n.stroke || '#1f2937', 'stroke-width': 2,
+            }));
+        }
+        // viewport frame
+        const rect = svg.getBoundingClientRect();
+        const wx = -state.camera.x / state.camera.zoom;
+        const wy = -state.camera.y / state.camera.zoom;
+        const ww = rect.width  / state.camera.zoom;
+        const wh = rect.height / state.camera.zoom;
+        const mmR = mm.getBoundingClientRect();
+        const sx = mmR.width / vb.w;
+        const sy = mmR.height / vb.h;
+        const fx = (wx - vb.x) * sx;
+        const fy = (wy - vb.y) * sy;
+        const fw = ww * sx;
+        const fh = wh * sy;
+        mmFrame.style.left   = fx + 'px';
+        mmFrame.style.top    = fy + 'px';
+        mmFrame.style.width  = fw + 'px';
+        mmFrame.style.height = fh + 'px';
+    };
+
+    const origRender = renderAll;
+    window.renderAll = (...a) => { origRender(...a); update(); };
+    const origApply = applyCamera;
+    window.applyCamera = (...a) => { origApply(...a); update(); };
+
+    setTimeout(update, 50);
+    window.addEventListener('resize', update);
+}
+
+/* ---------- legend in help ---------- */
+function renderLegendInHelp() {
+    const ul = document.getElementById('legendList');
+    if (!ul || ul.dataset.ready) return;
+    ul.dataset.ready = '1';
+    for (const kind in SHAPES) {
+        const def = SHAPES[kind];
+        const li = document.createElement('li');
+        li.innerHTML = `<svg viewBox="0 0 56 36" xmlns="${SVG_NS}">${paletteSvgFor(kind)}</svg><span>${def.label}</span>`;
+        ul.appendChild(li);
+    }
 }
 
 /* ---------- canvas interaction: select + move + marquee ---------- */
