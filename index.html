@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BPMN Future — Rossilber</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+</head>
+<body>
+    <!-- ============ HEADER ============ -->
+    <header class="app-header">
+        <div class="brand">
+            <div class="brand-mark">R</div>
+            <div class="brand-text">
+                <div class="brand-title">Rossilber</div>
+                <div class="brand-sub">CORPORATE PORTAL</div>
+            </div>
+        </div>
+        <nav class="top-nav">
+            <a class="nav-item" href="#">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                GPT
+            </a>
+            <a class="nav-item active" href="#">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                Направления
+            </a>
+            <a class="nav-item" href="#">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                Цифровая команда
+            </a>
+            <a class="nav-item" href="#">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h7v9H3z"/><path d="M14 3h7v5h-7z"/><path d="M14 12h7v9h-7z"/><path d="M3 16h7v5H3z"/></svg>
+                Дашборд
+            </a>
+        </nav>
+        <div class="header-actions">
+            <span class="product-badge">BPMN Future</span>
+        </div>
+    </header>
+
+    <!-- ============ TOOLBAR ============ -->
+    <div class="toolbar">
+        <div class="tool-group">
+            <button class="tool-btn" data-action="new" title="Новая карта (Ctrl+N)"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></button>
+            <button class="tool-btn" data-action="open" title="Открыть JSON"><svg viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></button>
+            <button class="tool-btn" data-action="save" title="Сохранить JSON"><svg viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg></button>
+            <input type="file" id="fileInput" accept=".json" style="display:none" />
+        </div>
+
+        <div class="tool-sep"></div>
+
+        <div class="tool-group">
+            <button class="tool-btn" data-action="undo" title="Отменить (Ctrl+Z)"><svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg></button>
+            <button class="tool-btn" data-action="redo" title="Вернуть (Ctrl+Y)"><svg viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg></button>
+        </div>
+
+        <div class="tool-sep"></div>
+
+        <div class="tool-group">
+            <button class="tool-btn" data-action="duplicate" title="Дублировать (Ctrl+D)"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+            <button class="tool-btn" data-action="delete" title="Удалить (Del)"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg></button>
+            <button class="tool-btn" data-action="front" title="На передний план"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="13" height="13"/><rect x="8" y="8" width="13" height="13"/></svg></button>
+            <button class="tool-btn" data-action="back" title="На задний план"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13"/><rect x="3" y="3" width="13" height="13"/></svg></button>
+        </div>
+
+        <div class="tool-sep"></div>
+
+        <div class="tool-group">
+            <button class="tool-btn" data-action="zoom-out" title="Уменьшить"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/></svg></button>
+            <button class="tool-btn zoom-label" data-action="zoom-reset" title="Сбросить зум"><span id="zoomLabel">100%</span></button>
+            <button class="tool-btn" data-action="zoom-in" title="Увеличить"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.3-4.3"/><path d="M8 11h6"/><path d="M11 8v6"/></svg></button>
+            <button class="tool-btn" data-action="fit" title="По размеру"><svg viewBox="0 0 24 24"><path d="M3 3h6M3 3v6"/><path d="M21 3h-6M21 3v6"/><path d="M3 21h6M3 21v-6"/><path d="M21 21h-6M21 21v-6"/></svg></button>
+        </div>
+
+        <div class="tool-sep"></div>
+
+        <div class="tool-group">
+            <label class="tool-toggle"><input type="checkbox" id="toggleGrid" checked />Сетка</label>
+            <label class="tool-toggle"><input type="checkbox" id="toggleSnap" checked />Привязка</label>
+            <label class="tool-toggle"><input type="checkbox" id="toggleOrtho" checked />Ортого­наль­ные стрелки</label>
+        </div>
+
+        <div class="tool-spacer"></div>
+
+        <div class="tool-group level-switcher">
+            <span class="level-caption">Уровень:</span>
+            <button class="level-btn" data-level="1">1 · Продукт</button>
+            <button class="level-btn active" data-level="2">2 · Процесс</button>
+            <button class="level-btn" data-level="3">3 · Активность</button>
+            <button class="level-btn" data-level="4">4 · Задача</button>
+        </div>
+
+        <div class="tool-sep"></div>
+
+        <div class="tool-group">
+            <button class="tool-btn export-btn" data-action="export-png">PNG</button>
+            <button class="tool-btn export-btn" data-action="export-svg">SVG</button>
+            <button class="tool-btn export-btn primary" data-action="help" title="Справка">?</button>
+        </div>
+    </div>
+
+    <!-- ============ WORKSPACE ============ -->
+    <div class="workspace">
+        <!-- LEFT: shape palette -->
+        <aside class="palette" id="palette">
+            <div class="palette-search">
+                <input type="text" id="paletteSearch" placeholder="Поиск фигуры…" />
+            </div>
+            <div class="palette-sections" id="paletteSections"><!-- injected by JS --></div>
+            <div class="palette-footer">
+                <div class="palette-hint">
+                    <strong>Подсказка:</strong>
+                    перетащите фигуру на холст.
+                    Чтобы соединить — наведите на фигуру, потяните от синей точки к другой фигуре.
+                </div>
+            </div>
+        </aside>
+
+        <!-- CENTER: canvas -->
+        <main class="canvas-wrap">
+            <div class="canvas-host" id="canvasHost">
+                <svg id="svg" class="canvas-svg" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                        <!-- Grid -->
+                        <pattern id="grid-small" width="10" height="10" patternUnits="userSpaceOnUse">
+                            <path d="M 10 0 L 0 0 0 10" fill="none" stroke="#eef0f4" stroke-width="1"/>
+                        </pattern>
+                        <pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse">
+                            <rect width="100" height="100" fill="url(#grid-small)"/>
+                            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#dde2eb" stroke-width="1"/>
+                        </pattern>
+
+                        <!-- Arrow markers -->
+                        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10 z" fill="#1f2937"/>
+                        </marker>
+                        <marker id="arrow-open" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+                            <path d="M 0 0 L 10 5 L 0 10" fill="none" stroke="#1f2937" stroke-width="1.5"/>
+                        </marker>
+                        <marker id="arrow-circle" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+                            <circle cx="5" cy="5" r="3" fill="#fff" stroke="#1f2937" stroke-width="1.3"/>
+                        </marker>
+
+                        <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+                            <feDropShadow dx="0" dy="1.4" stdDeviation="1.6" flood-color="#111827" flood-opacity=".14"/>
+                        </filter>
+                    </defs>
+
+                    <!-- Viewport group holds everything -->
+                    <g id="viewport">
+                        <rect id="gridRect" x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid)"/>
+                        <g id="layer-containers"></g>
+                        <g id="layer-edges"></g>
+                        <g id="layer-nodes"></g>
+                        <g id="layer-overlay"></g>
+                    </g>
+                </svg>
+
+                <!-- minimap -->
+                <div class="minimap" id="minimap">
+                    <svg id="minimapSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <div class="minimap-frame" id="minimapFrame"></div>
+                </div>
+
+                <!-- floating empty-state hint -->
+                <div class="empty-hint" id="emptyHint">
+                    <h2>BPMN Future</h2>
+                    <p>Перетащите фигуру из палитры слева.<br/>Двойной клик — переименовать. Потяните от синего кружка — соединить.</p>
+                </div>
+            </div>
+        </main>
+
+        <!-- RIGHT: properties -->
+        <aside class="props" id="props">
+            <div class="props-head">Свойства</div>
+            <div class="props-body" id="propsBody">
+                <div class="props-empty">
+                    <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="#9aa3b2" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                    <p>Выделите фигуру или стрелку, чтобы изменить её свойства.</p>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- ============ MODALS ============ -->
+    <div class="modal" id="helpModal">
+        <div class="modal-card">
+            <div class="modal-head">
+                <h3>BPMN Future — Справочник</h3>
+                <button class="modal-close" data-close>×</button>
+            </div>
+            <div class="modal-body">
+                <div class="help-grid">
+                    <section>
+                        <h4>Горячие клавиши</h4>
+                        <ul>
+                            <li><kbd>Delete</kbd> / <kbd>Backspace</kbd> — удалить</li>
+                            <li><kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> — отменить / вернуть</li>
+                            <li><kbd>Ctrl/Cmd</kbd>+<kbd>D</kbd> — дублировать</li>
+                            <li><kbd>Ctrl/Cmd</kbd>+<kbd>C</kbd> / <kbd>V</kbd> — копировать / вставить</li>
+                            <li><kbd>Ctrl/Cmd</kbd>+<kbd>A</kbd> — выделить всё</li>
+                            <li><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd> — скачать JSON</li>
+                            <li><kbd>Space</kbd>+drag или средняя кнопка — панорама</li>
+                            <li>Колёсико — зум, <kbd>+</kbd>/<kbd>-</kbd>, <kbd>0</kbd> — 100%</li>
+                            <li>Стрелки — сдвинуть на 1 пикс, <kbd>Shift</kbd>+стрелки — на 10</li>
+                            <li>Двойной клик — редактировать текст</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h4>Как строить карту</h4>
+                        <ol>
+                            <li>Выберите уровень (1-4) в панели сверху.</li>
+                            <li>Перетащите «Старт» из палитры.</li>
+                            <li>Наведите на фигуру — появятся синие точки. Потяните от точки к следующей фигуре, чтобы создать стрелку.</li>
+                            <li>Для развилки — перетащите шлюз «X», «+», «O» и сделайте от него 2-4 исходящие стрелки.</li>
+                            <li>Назначьте критичность / RACI / PI / KPI в панели справа.</li>
+                        </ol>
+                    </section>
+                    <section>
+                        <h4>Условные обозначения (по SDCA)</h4>
+                        <ul class="legend-list" id="legendList"></ul>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="context-menu" id="ctxMenu" hidden>
+        <button data-cmd="edit">Редактировать текст</button>
+        <button data-cmd="duplicate">Дублировать</button>
+        <button data-cmd="front">На передний план</button>
+        <button data-cmd="back">На задний план</button>
+        <button data-cmd="delete" class="danger">Удалить</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
