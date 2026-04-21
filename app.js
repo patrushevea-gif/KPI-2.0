@@ -59,6 +59,91 @@ const state = {
      anchor(node, side): returns {x,y} of connection point
    }
 ----------------------------------------------*/
+/* ---------- tooltips (краткое описание артефакта при наведении) ---------- */
+const TOOLTIPS = {
+    // events
+    'event-start':        'Начало процесса — первый шаг.',
+    'event-intermediate': 'Событие в середине процесса.',
+    'event-end':          'Завершение процесса.',
+    'event-timer':        'Ожидание по времени или расписанию.',
+    'event-start-message':'Старт по получению сообщения.',
+    'event-int-message':  'Получение сообщения в процессе.',
+    'event-int-message-throw':'Отправка сообщения в процессе.',
+    'event-end-message':  'Завершение с отправкой сообщения.',
+    'event-boundary-message-int':   'Прерывает задачу при сообщении.',
+    'event-boundary-message-nonint':'Реагирует без прерывания задачи.',
+    'event-int-timer':    'Пауза процесса по таймеру.',
+    'event-boundary-timer-int':   'Прерывает задачу по таймауту.',
+    'event-boundary-timer-nonint':'Запуск параллельно по таймеру.',
+    'event-end-terminate':'Немедленное прекращение всего процесса.',
+    'event-int-error':    'Обработка известной ошибки.',
+    'event-boundary-error':'Перехват ошибки внутри задачи.',
+    'event-end-error':    'Завершение с ошибкой.',
+    'event-int-cancel':   'Отмена транзакции внутри процесса.',
+    'event-end-cancel':   'Завершение с отменой транзакции.',
+    'event-int-compensation':'Запуск компенсации выполненных действий.',
+    'event-end-compensation':'Завершение с компенсацией.',
+    'event-int-escalation':'Передача управления вверх по процессу.',
+    'event-end-escalation':'Завершение с эскалацией наверх.',
+    'event-start-condition':'Старт по выполнению условия.',
+    'event-int-condition':  'Срабатывает при выполнении условия.',
+    'event-boundary-condition-int':   'Прерывает задачу при условии.',
+    'event-boundary-condition-nonint':'Реагирует без прерывания.',
+    'event-int-link-catch':'Вход в звено цепочки процесса.',
+    'event-int-link-throw':'Переход в другую часть процесса.',
+    'event-start-signal':'Старт при получении сигнала.',
+    'event-int-signal':  'Приём/отправка широковещательного сигнала.',
+    'event-end-signal':  'Завершение с отправкой сигнала.',
+    'event-start-complex':'Старт при нескольких условиях.',
+    'event-int-complex':  'Комбинация нескольких событий.',
+    'event-end-complex':  'Завершение нескольких веток сразу.',
+    'event-start-parallel-multi':'Старт при всех событиях одновременно.',
+    'event-int-parallel-multi':  'Сработает только после всех событий.',
+
+    // tasks
+    'task':           'Обычная задача в процессе.',
+    'task-critical':  'Критичная задача — прямое влияние на результат.',
+    'task-manual':    'Выполняется человеком вручную.',
+    'task-auto':      'Выполняется системой автоматически.',
+    'task-external':  'Задача другого отдела или контрагента.',
+    'subprocess':     'Группа задач, разворачиваемая в отдельный процесс.',
+
+    // gateways
+    'gateway-x':          'Эксклюзивное «ИЛИ» — одна ветка из нескольких.',
+    'gateway-plus':       'Параллельное «И» — все ветки одновременно.',
+    'gateway-o':          'Включающее «ИЛИ» — одна или несколько веток.',
+    'gateway-event':      'Ветвление по первому наступившему событию.',
+    'gateway-event-instance':'XOR-события с созданием нового процесса.',
+    'gateway-parallel-event-instance':'Все события — один новый процесс.',
+    'gateway-complex':    'Сложное условие ветвления или слияния.',
+
+    // data & systems
+    'data-io':        'Общие входы или выходы процесса.',
+    'data-object':    'Документ, отчёт или информационный объект.',
+    'data-store':     'Система или база данных процесса.',
+    'data-external':  'Внешний контрагент или лицо.',
+    'pi':             'Индикатор эффективности задачи (PI).',
+    'kpi':            'Ключевой показатель эффективности (KPI).',
+    'sop':            'Методика или инструкция к задаче.',
+
+    // artifacts (Приложение Г)
+    'data-input':     'Исходные данные, входящие в задачу.',
+    'data-output':    'Результат выполнения задачи.',
+    'data-collection':'Пакет или набор однотипных объектов.',
+    'data-storage':   'Место хранения данных — БД, архив.',
+    'message-initiating':'Первое сообщение в цепочке взаимодействия.',
+    'message-response':  'Ответ на инициирующее сообщение.',
+
+    // swim
+    'pool':  'Пул — участник процесса или организация.',
+    'lane':  'Дорожка — роль, отдел или исполнитель.',
+    'group': 'Визуальная группировка связанных элементов.',
+
+    // annotations
+    'annotation':    'Текстовый комментарий к элементу.',
+    'level-header':  'Заголовок уровня карты процессов.',
+};
+
 const CATEGORIES = [
     { id:'events',     title:'События' },
     { id:'tasks',      title:'Задачи' },
@@ -570,8 +655,8 @@ SHAPES['kpi'] = {
     draw: n => drawRect(n, 22),
 };
 SHAPES['sop'] = {
-    label:'SOP / OPL', category:'data',
-    defaults:{ w:110, h:44, fill:'#fef3c7', stroke:'#b45309', text:'SOP', fontSize:12 },
+    label:'Методики / инструкции', category:'data',
+    defaults:{ w:150, h:44, fill:'#fef3c7', stroke:'#b45309', text:'Методика', fontSize:12 },
     draw: n => drawRect(n, 22),
 };
 
@@ -1710,9 +1795,12 @@ function buildPalette() {
             item.className = 'palette-item';
             item.dataset.kind = kind;
             item.draggable = true;
+            const tip = TOOLTIPS[kind] || def.label;
+            item.title = tip; // fallback native tooltip
             item.innerHTML = `
                 <svg viewBox="0 0 56 36" xmlns="${SVG_NS}">${paletteSvgFor(kind)}</svg>
                 <div class="pal-label">${def.label}</div>
+                <div class="pal-tip">${escapeXml(tip)}</div>
             `;
             grid.appendChild(item);
         }
@@ -2086,7 +2174,7 @@ function renderNodeProps(node, count) {
                 <div class="prop-field"><label>KPI</label><input type="text" data-prop="kpi" value="${escapeXml(node.kpi||'')}"/></div>
             </div>
             <div class="prop-row full">
-                <div class="prop-field"><label>SOP / OPL</label><input type="text" data-prop="sop" value="${escapeXml(node.sop||'')}"/></div>
+                <div class="prop-field"><label>Методика / инструкция</label><input type="text" data-prop="sop" value="${escapeXml(node.sop||'')}"/></div>
             </div>
         </div>
 
