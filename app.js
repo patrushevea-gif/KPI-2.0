@@ -1796,11 +1796,10 @@ function buildPalette() {
             item.dataset.kind = kind;
             item.draggable = true;
             const tip = TOOLTIPS[kind] || def.label;
-            item.title = tip; // fallback native tooltip
+            item.title = tip;
             item.innerHTML = `
                 <svg viewBox="0 0 56 36" xmlns="${SVG_NS}">${paletteSvgFor(kind)}</svg>
                 <div class="pal-label">${def.label}</div>
-                <div class="pal-tip">${escapeXml(tip)}</div>
             `;
             grid.appendChild(item);
         }
