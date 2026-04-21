@@ -1,4 +1,4 @@
-# BPMN Future
+# BPMN Rossilber
 
 Визуальный редактор карт процессов в нотации SDCA / BPMN — как во вложенных примерах (`examples/`).
 
